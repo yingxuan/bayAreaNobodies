@@ -1,13 +1,11 @@
-version: '3.8'
-
 services:
   postgres:
     image: postgres:15-alpine
-    container_name: llm4luck_postgres
+    container_name: bayareanobodies_postgres
     environment:
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: postgres
-      POSTGRES_DB: llm4luck
+      POSTGRES_DB: bayareanobodies
     ports:
       - "5432:5432"
     volumes:
@@ -20,7 +18,7 @@ services:
 
   redis:
     image: redis:7-alpine
-    container_name: llm4luck_redis
+    container_name: bayareanobodies_redis
     ports:
       - "6379:6379"
     volumes:
@@ -35,9 +33,9 @@ services:
     build:
       context: ./api
       dockerfile: Dockerfile
-    container_name: llm4luck_api
+    container_name: bayareanobodies_api
     environment:
-      DATABASE_URL: postgresql://postgres:postgres@postgres:5432/llm4luck
+      DATABASE_URL: postgresql://postgres:postgres@postgres:5432/bayareanobodies
       REDIS_URL: redis://redis:6379/0
       GOOGLE_CSE_API_KEY: ${GOOGLE_CSE_API_KEY:-}
       GOOGLE_CSE_ID: ${GOOGLE_CSE_ID:-}
@@ -60,7 +58,7 @@ services:
     build:
       context: ./web
       dockerfile: Dockerfile
-    container_name: llm4luck_web
+    container_name: bayareanobodies_web
     environment:
       NEXT_PUBLIC_API_URL: http://localhost:8000
     ports:

@@ -16,7 +16,7 @@ def init_db():
     
     # Get database URL
     alembic_cfg = Config("alembic.ini")
-    alembic_cfg.set_main_option("sqlalchemy.url", os.getenv("DATABASE_URL", "postgresql://postgres:postgres@localhost:5432/llm4luck"))
+    alembic_cfg.set_main_option("sqlalchemy.url", os.getenv("DATABASE_URL", "postgresql://postgres:postgres@localhost:5432/bayareanobodies"))
     
     # Run migrations
     try:

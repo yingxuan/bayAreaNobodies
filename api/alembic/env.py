@@ -20,7 +20,7 @@ target_metadata = Base.metadata
 
 
 def get_url():
-    return os.getenv("DATABASE_URL", "postgresql://postgres:postgres@localhost:5432/llm4luck")
+    return os.getenv("DATABASE_URL", "postgresql://postgres:postgres@localhost:5432/bayareanobodies")
 
 
 def run_migrations_offline() -> None:
