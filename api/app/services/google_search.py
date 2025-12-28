@@ -10,22 +10,50 @@ GOOGLE_CSE_API_KEY = os.getenv("GOOGLE_CSE_API_KEY")
 GOOGLE_CSE_ID = os.getenv("GOOGLE_CSE_ID")
 GOOGLE_CSE_ENDPOINT = os.getenv("GOOGLE_CSE_ENDPOINT", "https://www.googleapis.com/customsearch/v1")
 REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379/0")
+DAILY_CSE_BUDGET = int(os.getenv("DAILY_CSE_BUDGET", "80"))
 
 redis_client = redis.from_url(REDIS_URL, decode_responses=True) if REDIS_URL else None
 
 
-def get_cache_key(query: str, start: int = 1) -> str:
-    """Generate cache key for search query"""
-    key_str = f"google_search:{query}:{start}"
-    return hashlib.md5(key_str.encode()).hexdigest()
+def get_daily_usage_key() -> str:
+    """Get Redis key for today's usage counter"""
+    today = datetime.now().strftime("%Y%m%d")
+    return f"cse:usage:{today}"
 
 
-def check_quota_exceeded() -> bool:
-    """Check if Google CSE API quota has been exceeded"""
+def get_cache_key(query: str, date_restrict: Optional[str], start: int, num: int) -> str:
+    """Generate cache key: cse:cache:<hash(q + dateRestrict + start + num)>"""
+    key_str = f"{query}:{date_restrict or ''}:{start}:{num}"
+    key_hash = hashlib.md5(key_str.encode()).hexdigest()
+    return f"cse:cache:{key_hash}"
+
+
+def check_budget_exceeded() -> bool:
+    """Check if daily CSE budget has been exceeded"""
     if not redis_client:
         return False
-    quota_key = "google_cse:quota_exceeded"
-    return redis_client.exists(quota_key) > 0
+    usage_key = get_daily_usage_key()
+    current_usage = redis_client.get(usage_key)
+    if current_usage is None:
+        return False
+    try:
+        return int(current_usage) >= DAILY_CSE_BUDGET
+    except (ValueError, TypeError):
+        return False
+
+
+def increment_usage() -> int:
+    """Increment daily usage counter and return current count"""
+    if not redis_client:
+        return 0
+    usage_key = get_daily_usage_key()
+    # Set expiration to end of day (86400 seconds = 24 hours)
+    # But we'll set it to 25 hours to be safe
+    current = redis_client.incr(usage_key)
+    if current == 1:
+        # First increment today, set expiration
+        redis_client.expire(usage_key, 90000)  # 25 hours
+    return current
 
 
 def search_google(
@@ -64,21 +92,21 @@ def search_google(
             "searchInformation": {"totalResults": "5"}
         }
     
-    # Check if quota exceeded
-    if check_quota_exceeded():
-        print(f"WARNING: Google CSE API quota exceeded. Skipping query: {query}")
-        return {
-            "items": [],
-            "searchInformation": {"totalResults": "0"},
-            "error": "API quota exceeded"
-        }
-    
-    # Check cache
-    cache_key = get_cache_key(query, start)
+    # Check cache first (cache hits don't consume budget)
+    cache_key = get_cache_key(query, date_restrict, start, num)
     if use_cache and redis_client:
         cached = redis_client.get(cache_key)
         if cached:
             return json.loads(cached)
+    
+    # Check budget before making API call
+    if check_budget_exceeded():
+        print(f"WARNING: Daily CSE budget ({DAILY_CSE_BUDGET}) exceeded. Skipping query: {query}")
+        return {
+            "items": [],
+            "searchInformation": {"totalResults": "0"},
+            "error": "quota_exceeded"
+        }
     
     # Prepare query - remove site: if siteSearch is used
     search_query = query
@@ -107,11 +135,13 @@ def search_google(
             response.raise_for_status()
             data = response.json()
             
-            # Cache for 24 hours (86400 seconds) to reduce API calls
-            # For coupon searches, cache for 12 hours since they're daily
-            cache_ttl = 43200 if "dealmoon" in query.lower() or "dealnews" in query.lower() else 86400
+            # Increment usage counter (only on successful API call)
+            usage_count = increment_usage()
+            print(f"CSE API call #{usage_count}/{DAILY_CSE_BUDGET} for query: {query[:50]}...")
+            
+            # Cache for 30 minutes (1800 seconds)
             if use_cache and redis_client:
-                redis_client.setex(cache_key, cache_ttl, json.dumps(data))
+                redis_client.setex(cache_key, 1800, json.dumps(data))
             
             return data
     except httpx.HTTPStatusError as e:
@@ -138,18 +168,16 @@ def search_google(
         
         print(error_msg)
         
-        # If quota exceeded, set a flag in Redis to prevent further calls
-        if is_quota_exceeded and redis_client:
-            quota_key = "google_cse:quota_exceeded"
-            # Set flag for 24 hours (quota resets daily)
-            redis_client.setex(quota_key, 86400, "1")
-            print("WARNING: Google CSE API quota exceeded. Setting flag to prevent further calls for 24 hours.")
+        # If quota exceeded (429), increment usage to track it
+        if is_quota_exceeded:
+            increment_usage()
+            print("WARNING: Google CSE API returned 429 error. Incrementing usage counter.")
         
-        # Return empty results on error (don't return mock data)
+        # Return empty results on error
         return {
             "items": [],
             "searchInformation": {"totalResults": "0"},
-            "error": error_msg
+            "error": "quota_exceeded" if is_quota_exceeded else error_msg
         }
     except Exception as e:
         print(f"Error calling Google Search API: {e}")
@@ -185,21 +213,11 @@ def fetch_multiple_pages(
     Returns:
         List of result items
     """
-    # Check quota before starting
-    if check_quota_exceeded():
-        print(f"WARNING: Google CSE API quota exceeded. Skipping fetch for query: {query}")
-        return []
-    
     all_items = []
     start = 1
     page_size = 10
     
     while len(all_items) < max_results:
-        # Check quota before each page
-        if check_quota_exceeded():
-            print(f"WARNING: Quota exceeded during pagination. Returning {len(all_items)} items.")
-            break
-        
         results = search_google(
             query=query,
             site_domain=site_domain,
@@ -208,7 +226,12 @@ def fetch_multiple_pages(
             date_restrict=date_restrict
         )
         
-        # Check for errors
+        # Check for quota exceeded error
+        if results.get("error") == "quota_exceeded":
+            print(f"WARNING: Budget exceeded during pagination. Returning {len(all_items)} items.")
+            break
+        
+        # Check for other errors
         if results.get("error"):
             print(f"Error fetching page {start}: {results.get('error')}")
             break

@@ -98,7 +98,7 @@ def calculate_scores(article: Article, search_rank: int, max_rank: int = 100):
 
 def process_search_query(query_obj: SourceQuery, db: Session):
     """Process a single search query and fetch articles"""
-    from app.services.google_search import check_quota_exceeded
+    from app.services.google_search import check_budget_exceeded
     
     lock_key = get_lock_key("search_query", query_obj.id)
     if not acquire_lock(lock_key):
@@ -106,9 +106,9 @@ def process_search_query(query_obj: SourceQuery, db: Session):
         return
     
     try:
-        # Check quota before processing
-        if check_quota_exceeded():
-            print(f"WARNING: Google CSE API quota exceeded. Skipping query {query_obj.id}")
+        # Check budget before processing
+        if check_budget_exceeded():
+            print(f"WARNING: Daily CSE budget exceeded. Skipping query {query_obj.id}: {query_obj.query}")
             return
         
         print(f"Processing query {query_obj.id}: {query_obj.query}")
@@ -283,11 +283,25 @@ def process_search_query(query_obj: SourceQuery, db: Session):
 
 def run_search_jobs():
     """Run all enabled search queries"""
+    from app.services.google_search import check_budget_exceeded
+    
     db = SessionLocal()
     try:
         queries = db.query(SourceQuery).filter(SourceQuery.enabled == True).all()
+        processed = 0
+        skipped = 0
+        
         for query in queries:
+            # Check budget before each query
+            if check_budget_exceeded():
+                print(f"WARNING: Daily CSE budget exceeded. Skipping remaining {len(queries) - processed} queries.")
+                skipped = len(queries) - processed
+                break
+            
             process_search_query(query, db)
+            processed += 1
+        
+        print(f"Search jobs completed: {processed} processed, {skipped} skipped due to budget")
     finally:
         db.close()
 
@@ -330,11 +344,11 @@ def create_trending_snapshots():
 
 def run_coupon_search():
     """Search for coupons from dealmoon.com and dealnews.com for Bay Area food deals"""
-    from app.services.google_search import check_quota_exceeded
+    from app.services.google_search import check_budget_exceeded
     
-    # Check quota before starting
-    if check_quota_exceeded():
-        print("WARNING: Google CSE API quota exceeded. Skipping coupon search.")
+    # Check budget before starting
+    if check_budget_exceeded():
+        print("WARNING: Daily CSE budget exceeded. Skipping coupon search.")
         return
     
     db = SessionLocal()
@@ -351,9 +365,9 @@ def run_coupon_search():
         
         processed_count = 0
         for query in queries:
-            # Check quota before each query
-            if check_quota_exceeded():
-                print(f"WARNING: Quota exceeded during coupon search. Processed {processed_count} queries.")
+            # Check budget before each query
+            if check_budget_exceeded():
+                print(f"WARNING: Budget exceeded during coupon search. Processed {processed_count} queries.")
                 break
             
             results = search_google(query, num=10, date_restrict="d14")

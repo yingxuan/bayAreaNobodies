@@ -4,6 +4,7 @@ from sqlalchemy import desc
 from app.database import get_db
 from app.models import Article
 from app.schemas import ArticleResponse
+from app.services.google_search import check_budget_exceeded
 from typing import Optional, List, Dict, Any
 import json
 
@@ -87,9 +88,13 @@ def get_food_radar_feed(
         }
         article_responses.append(ArticleResponse(**article_dict))
     
+    # Check if data is fresh or stale due to quota
+    data_freshness = "stale_due_to_quota" if check_budget_exceeded() else "fresh"
+    
     return {
         "articles": article_responses,
         "total": len(article_responses),
+        "data_freshness": data_freshness,
         "filters": {
             "city": city,
             "platform": platform,
