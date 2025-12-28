@@ -129,6 +129,126 @@ for article_data in sample_articles:
 db.commit()
 print(f'Created {count} sample articles for 1point3acres')
 
+# Create sample teamblind articles
+blind_articles = [
+    {
+        'url': 'https://www.teamblind.com/post/layoff-2024-abc123',
+        'title': 'Another round of layoffs at Meta - which teams are affected?',
+        'summary': 'Discussion about Meta layoffs and which teams/roles are most impacted.',
+        'cleaned_text': 'Meta just announced another round of layoffs. Engineering teams seem to be hit hard, especially in some product areas. Anyone know which specific teams are affected?',
+        'source_type': 'blind',
+        'published_at': datetime.now(pytz.UTC),
+        'company_tags': ['Meta'],
+        'city_hints': ['Menlo Park', 'San Francisco'],
+        'tags': ['layoff'],
+        'summary_bullets': [
+            'Meta announces new layoff round',
+            'Engineering teams heavily affected',
+            'Product areas also impacted'
+        ]
+    },
+    {
+        'url': 'https://www.teamblind.com/post/comp-2024-xyz789',
+        'title': 'Google L5 TC breakdown - is this competitive?',
+        'summary': 'Sharing Google L5 total compensation breakdown and asking for market comparison.',
+        'cleaned_text': 'Just got a Google L5 offer. Base: 250k, Equity: 400k over 4 years, Bonus: 20%. Total comp around 370k first year. Is this competitive for 2024?',
+        'source_type': 'blind',
+        'published_at': datetime.now(pytz.UTC),
+        'company_tags': ['Google'],
+        'city_hints': ['Mountain View'],
+        'tags': ['comp', 'offer'],
+        'summary_bullets': [
+            'Google L5 offer breakdown',
+            'Total comp ~370k first year',
+            'Asking for market comparison'
+        ]
+    },
+    {
+        'url': 'https://www.teamblind.com/post/new-grad-2024-def456',
+        'title': 'New grad 2024 - how is the job market?',
+        'summary': 'Discussion about the 2024 new grad job market and interview experiences.',
+        'cleaned_text': 'New grad here looking for jobs in 2024. Market seems tough. Getting interviews but competition is fierce. Anyone else experiencing this?',
+        'source_type': 'blind',
+        'published_at': datetime.now(pytz.UTC),
+        'company_tags': ['Google', 'Meta', 'Amazon'],
+        'city_hints': ['Mountain View', 'Seattle'],
+        'tags': ['new grad', 'interview'],
+        'summary_bullets': [
+            '2024 new grad job market discussion',
+            'Tough competition for roles',
+            'Getting interviews but hard to convert'
+        ]
+    },
+    {
+        'url': 'https://www.teamblind.com/post/promo-2024-ghi789',
+        'title': 'Promo promo promo - how to get promoted at FAANG?',
+        'summary': 'Tips and strategies for getting promoted at FAANG companies.',
+        'cleaned_text': 'Looking to get promoted from L4 to L5. What are the key things to focus on? Impact, scope, leadership? Any tips from those who recently got promoted?',
+        'source_type': 'blind',
+        'published_at': datetime.now(pytz.UTC),
+        'company_tags': ['Google', 'Meta', 'Amazon'],
+        'city_hints': ['Mountain View', 'Seattle'],
+        'tags': ['promo', 'career'],
+        'summary_bullets': [
+            'Promotion strategies at FAANG',
+            'Focus on impact and scope',
+            'Leadership is key for L4 to L5'
+        ]
+    },
+    {
+        'url': 'https://www.teamblind.com/post/offer-2024-jkl012',
+        'title': 'Amazon vs Google offer - which should I take?',
+        'summary': 'Comparing Amazon and Google offers and asking for advice on which to choose.',
+        'cleaned_text': 'Got offers from both Amazon and Google. Amazon: L5, 380k TC. Google: L4, 350k TC. Amazon team seems more interesting but Google has better WLB. What would you choose?',
+        'source_type': 'blind',
+        'published_at': datetime.now(pytz.UTC),
+        'company_tags': ['Amazon', 'Google'],
+        'city_hints': ['Seattle', 'Mountain View'],
+        'tags': ['offer', 'comp'],
+        'summary_bullets': [
+            'Comparing Amazon L5 vs Google L4',
+            'Amazon: 380k TC, interesting team',
+            'Google: 350k TC, better WLB'
+        ]
+    }
+]
+
+blind_count = 0
+for article_data in blind_articles:
+    # Compute content hash
+    content_hash = hashlib.sha256((article_data['title'] + article_data['cleaned_text'][:2000]).encode()).hexdigest()
+    
+    # Check if already exists
+    existing = db.query(Article).filter(Article.content_hash == content_hash).first()
+    if existing:
+        continue
+    
+    article = Article(
+        url=article_data['url'],
+        normalized_url=article_data['url'],
+        title=article_data['title'],
+        cleaned_text=article_data['cleaned_text'],
+        content_hash=content_hash,
+        source_type=article_data['source_type'],
+        published_at=article_data['published_at'],
+        summary=article_data['summary'],
+        summary_bullets=json.dumps(article_data['summary_bullets']),
+        company_tags=json.dumps(article_data['company_tags']),
+        city_hints=json.dumps(article_data['city_hints']),
+        tags=json.dumps(article_data['tags']),
+        views=0,
+        saves=0,
+        engagement_score=0.0,
+        freshness_score=1.0,
+        search_rank_score=0.8,
+        final_score=0.8
+    )
+    db.add(article)
+    blind_count += 1
+
+db.commit()
+print(f'Created {blind_count} sample articles for teamblind')
+
 if __name__ == "__main__":
     pass
 

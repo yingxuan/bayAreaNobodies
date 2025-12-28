@@ -95,6 +95,32 @@ def search_google(
                 redis_client.setex(cache_key, 600, json.dumps(data))
             
             return data
+    except httpx.HTTPStatusError as e:
+        error_msg = f"Error calling Google Search API: {e}"
+        # Try to get detailed error message
+        try:
+            error_data = e.response.json()
+            if "error" in error_data:
+                error_info = error_data["error"]
+                error_msg += f"\n  Error: {error_info.get('message', 'Unknown error')}"
+                if "errors" in error_info:
+                    for err in error_info["errors"]:
+                        error_msg += f"\n  - {err.get('message', '')}"
+        except:
+            error_msg += f"\n  Response: {e.response.text[:200]}"
+        print(error_msg)
+        # Return mock data on error
+        return {
+            "items": [
+                {
+                    "title": f"Error Result {i}",
+                    "link": f"https://example.com/error{i}",
+                    "snippet": f"Error fetching: {query}"
+                }
+                for i in range(1, min(num + 1, 3))
+            ],
+            "searchInformation": {"totalResults": "0"}
+        }
     except Exception as e:
         print(f"Error calling Google Search API: {e}")
         # Return mock data on error
