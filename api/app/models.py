@@ -9,7 +9,6 @@ from datetime import datetime
 class SourceType(str, enum.Enum):
     DI_LI = "di_li"
     BLIND = "blind"
-    XHS = "xhs"
 
 
 class SourceQuery(Base):
@@ -51,6 +50,9 @@ class Article(Base):
     cleaned_text = Column(Text, nullable=True)
     content_hash = Column(String(64), nullable=False, unique=True, index=True)
     source_type = Column(String, nullable=True, index=True)
+    platform = Column(String, nullable=True, index=True)  # youtube, tiktok, instagram, web
+    video_id = Column(String, nullable=True)  # Video ID for YouTube/TikTok/Instagram
+    thumbnail_url = Column(Text, nullable=True)  # Thumbnail image URL
     published_at = Column(DateTime(timezone=True), nullable=True)
     fetched_at = Column(DateTime(timezone=True), server_default=func.now())
     summary = Column(Text, nullable=True)

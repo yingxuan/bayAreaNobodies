@@ -10,7 +10,8 @@ from app.database import SessionLocal
 from app.models import SourceQuery, SearchResultRaw, Article, TrendingSnapshot
 from app.services.google_search import search_google, fetch_multiple_pages
 from app.services.article_fetcher import (
-    normalize_url, fetch_article, compute_content_hash, extract_entities
+    normalize_url, fetch_article, compute_content_hash, extract_entities, is_valid_content_url,
+    detect_platform, extract_food_entities
 )
 from app.services.summarizer import summarize_article
 import json
@@ -63,9 +64,17 @@ def calculate_scores(article: Article, search_rank: int, max_rank: int = 100):
                 pub_date = pytz.UTC.localize(pub_date)
             age_hours = (now - pub_date).total_seconds() / 3600
         else:
-            age_hours = (now - article.fetched_at).total_seconds() / 3600
+            # Fallback to fetched_at or use current time
+            if article.fetched_at:
+                age_hours = (now - article.fetched_at).total_seconds() / 3600
+            else:
+                age_hours = 0  # Brand new, maximum freshness
     else:
-        age_hours = (now - article.fetched_at).total_seconds() / 3600
+        # Use fetched_at or current time as fallback
+        if article.fetched_at:
+            age_hours = (now - article.fetched_at).total_seconds() / 3600
+        else:
+            age_hours = 0  # Brand new, maximum freshness
     
     # Freshness decays over time (max score for < 24h, decays to 0 at 14 days)
     if age_hours < 24:
@@ -89,20 +98,30 @@ def calculate_scores(article: Article, search_rank: int, max_rank: int = 100):
 
 def process_search_query(query_obj: SourceQuery, db: Session):
     """Process a single search query and fetch articles"""
+    from app.services.google_search import check_quota_exceeded
+    
     lock_key = get_lock_key("search_query", query_obj.id)
     if not acquire_lock(lock_key):
         print(f"Query {query_obj.id} already running, skipping")
         return
     
     try:
+        # Check quota before processing
+        if check_quota_exceeded():
+            print(f"WARNING: Google CSE API quota exceeded. Skipping query {query_obj.id}")
+            return
+        
         print(f"Processing query {query_obj.id}: {query_obj.query}")
         
         # Fetch search results
+        # For food_radar queries, use longer date range (30 days) or no restriction
+        # because YouTube content may be older but still relevant
+        date_restrict = None if query_obj.source_type == "food_radar" else "d14"
         results = fetch_multiple_pages(
             query=query_obj.query,
             site_domain=query_obj.site_domain,
             max_results=30,
-            date_restrict="d14"  # Last 14 days
+            date_restrict=date_restrict
         )
         
         if not results:
@@ -129,6 +148,22 @@ def process_search_query(query_obj: SourceQuery, db: Session):
             if not url:
                 continue
             
+            # Skip invalid URLs (homepage/explore pages)
+            if not is_valid_content_url(url):
+                print(f"Skipping {url}: invalid content URL (homepage/explore page)")
+                continue
+            
+            # Skip xiaohongshu URLs (app no longer uses xiaohongshu)
+            if "xiaohongshu.com" in url.lower() or "xiaohongshu" in url.lower():
+                print(f"Skipping {url}: xiaohongshu is no longer used")
+                continue
+            
+            # For food_radar, skip Blind and di_li URLs (we only want food content from other sources)
+            if query_obj.source_type == "food_radar":
+                if "teamblind.com" in url.lower() or "1point3acres.com" in url.lower():
+                    print(f"Skipping {url}: Blind/di_li content not allowed in food_radar")
+                    continue
+            
             normalized = normalize_url(url)
             
             # Check if article already exists
@@ -142,23 +177,47 @@ def process_search_query(query_obj: SourceQuery, db: Session):
                 db.commit()
                 continue
             
+            # Detect platform from URL (for food_radar and future use)
+            platform = detect_platform(url)
+            
+            # Extract video ID and thumbnail URL
+            from app.services.article_fetcher import extract_video_id, extract_thumbnail_url
+            video_id = extract_video_id(url, platform)
+            thumbnail_url = extract_thumbnail_url(url, platform, video_id)
+            
             # Fetch article content
             text, title, published_at = fetch_article(url)
             
+            # Graceful fallback: if extraction fails, use Google snippet and title
+            # This is important for platforms like YouTube/TikTok that may not extract well
             if not text or len(text) < 100:
-                print(f"Skipping {url}: insufficient content")
+                # Fallback to Google snippet if available
+                snippet = item.get("snippet", "")
+                if snippet and len(snippet) > 50:
+                    text = snippet
+                    print(f"Using Google snippet for {url} (extraction failed)")
+                else:
+                    print(f"Skipping {url}: insufficient content and no snippet")
+                    continue
+            
+            # Use title from fetch or fallback to Google result title
+            final_title = title or item.get("title", "")
+            if not final_title:
+                print(f"Skipping {url}: no title available")
                 continue
             
             # Check for login-required content (common patterns in Chinese sites)
-            login_indicators = ['您需要 登录', '需要 登录', '没有帐号', '登录 才可以']
-            if any(indicator in text for indicator in login_indicators):
-                # If login prompt is a significant portion, skip
-                if len(text) < 500 or sum(len(ind) for ind in login_indicators if ind in text) > len(text) * 0.2:
-                    print(f"Skipping {url}: login-required page")
-                    continue
+            # Only check if we have substantial text (not just snippet)
+            if len(text) > 500:
+                login_indicators = ['您需要 登录', '需要 登录', '没有帐号', '登录 才可以']
+                if any(indicator in text for indicator in login_indicators):
+                    # If login prompt is a significant portion, skip
+                    if sum(len(ind) for ind in login_indicators if ind in text) > len(text) * 0.2:
+                        print(f"Skipping {url}: login-required page")
+                        continue
             
             # Compute content hash for deduplication
-            content_hash = compute_content_hash(title, text)
+            content_hash = compute_content_hash(final_title, text)
             
             # Check for duplicate by content hash
             duplicate = db.query(Article).filter(
@@ -169,26 +228,43 @@ def process_search_query(query_obj: SourceQuery, db: Session):
                 print(f"Skipping {url}: duplicate content")
                 continue
             
-            # Summarize
-            summary, bullets = summarize_article(text, title)
+            # Summarize (works with snippet or full text)
+            summary, bullets = summarize_article(text, final_title)
             
-            # Extract entities
-            companies, cities, tags = extract_entities(text, title)
+            # Extract entities based on source type
+            # For food_radar, use food-focused extraction; otherwise use general extraction
+            if query_obj.source_type == "food_radar":
+                cities, food_tags, general_tags, place_name = extract_food_entities(text, final_title)
+                # Store place_name in tags if found (we don't have a separate field)
+                all_tags = food_tags + general_tags
+                if place_name:
+                    all_tags.append(f"place:{place_name}")
+                companies = []  # Not relevant for food content
+            else:
+                companies, cities, tags = extract_entities(text, final_title)
+                all_tags = tags
+                place_name = None
             
             # Create article
+            from datetime import datetime as dt
+            import pytz
             article = Article(
                 url=url,
                 normalized_url=normalized,
-                title=title or item.get("title", ""),
+                title=final_title,
                 cleaned_text=text[:50000],  # Limit size
                 content_hash=content_hash,
                 source_type=query_obj.source_type,
+                platform=platform,  # Store detected platform
+                video_id=video_id,  # Store video ID for embedding
+                thumbnail_url=thumbnail_url,  # Store thumbnail URL
                 published_at=published_at,
+                fetched_at=dt.now(pytz.UTC),  # Explicitly set fetched_at
                 summary=summary,
                 summary_bullets=bullets,
                 company_tags=json.dumps(companies) if companies else None,
                 city_hints=json.dumps(cities) if cities else None,
-                tags=json.dumps(tags) if tags else None
+                tags=json.dumps(all_tags) if all_tags else None
             )
             
             # Calculate scores
@@ -253,27 +329,52 @@ def create_trending_snapshots():
 
 
 def run_coupon_search():
-    """Search for coupons using Google Search"""
+    """Search for coupons from dealmoon.com and dealnews.com for Bay Area food deals"""
+    from app.services.google_search import check_quota_exceeded
+    
+    # Check quota before starting
+    if check_quota_exceeded():
+        print("WARNING: Google CSE API quota exceeded. Skipping coupon search.")
+        return
+    
     db = SessionLocal()
     try:
+        # Optimized queries: reduced from 15 to 8 queries
+        # Focus on broader searches that cover multiple cities and categories
         queries = [
-            "coupon Sunnyvale boba",
-            "BOGO Bay Area",
-            "discount Cupertino restaurant",
-            "coupon San Jose food"
+            "site:dealmoon.com Bay Area food restaurant",
+            "site:dealmoon.com Bay Area boba 奶茶",
+            "site:dealmoon.com San Francisco San Jose food",
+            "site:dealnews.com Bay Area food restaurant",
+            "site:dealnews.com Bay Area boba",
         ]
         
+        processed_count = 0
         for query in queries:
+            # Check quota before each query
+            if check_quota_exceeded():
+                print(f"WARNING: Quota exceeded during coupon search. Processed {processed_count} queries.")
+                break
+            
             results = search_google(query, num=10, date_restrict="d14")
+            
+            # Check if error occurred
+            if results.get("error"):
+                print(f"Error in query '{query}': {results.get('error')}")
+                continue
+            
             items = results.get("items", [])
+            processed_count += 1
             
             for item in items:
                 url = item.get("link", "")
                 title = item.get("title", "")
                 snippet = item.get("snippet", "")
                 
+                if not url or ("dealmoon.com" not in url and "dealnews.com" not in url):
+                    continue
+                
                 # Simple extraction of coupon info
-                # In production, use more sophisticated parsing
                 from app.models import Coupon
                 
                 # Check if already exists
@@ -285,35 +386,73 @@ def run_coupon_search():
                     continue
                 
                 # Extract city from title/snippet
-                cities = ["Sunnyvale", "Cupertino", "San Jose", "Palo Alto", "Mountain View"]
+                cities = [
+                    "Sunnyvale", "Cupertino", "San Jose", "Palo Alto", "Mountain View",
+                    "San Francisco", "SF", "Oakland", "Fremont", "Santa Clara",
+                    "Redwood City", "Menlo Park", "Foster City", "San Mateo"
+                ]
                 city = None
                 for c in cities:
                     if c.lower() in (title + snippet).lower():
                         city = c
                         break
                 
-                # Extract category
+                # Extract category (focus on food-related)
                 category = None
-                if "boba" in query.lower() or "奶茶" in (title + snippet).lower():
+                text_lower = (title + snippet).lower()
+                if "boba" in text_lower or "奶茶" in text_lower or "milk tea" in text_lower:
                     category = "boba"
-                elif "food" in query.lower() or "restaurant" in query.lower():
+                elif "restaurant" in text_lower or "dining" in text_lower or "food" in text_lower:
                     category = "food"
+                elif "cafe" in text_lower or "coffee" in text_lower:
+                    category = "cafe"
+                elif "dessert" in text_lower or "bakery" in text_lower:
+                    category = "dessert"
+                else:
+                    category = "food"  # Default to food
+                
+                # Try to extract coupon code from snippet
+                code = None
+                import re
+                # Look for patterns like "CODE: ABC123" or "Code: XYZ" or "优惠码: ABC"
+                code_patterns = [
+                    r'(?:code|优惠码|promo code|coupon code)[:\s]+([A-Z0-9]{4,20})',
+                    r'([A-Z0-9]{4,20})(?:\s+code|\s+coupon)',
+                ]
+                for pattern in code_patterns:
+                    match = re.search(pattern, snippet, re.IGNORECASE)
+                    if match:
+                        code = match.group(1).strip()
+                        break
+                
+                # Calculate confidence based on how much info we have
+                confidence = 0.5
+                if code:
+                    confidence += 0.2
+                if city:
+                    confidence += 0.1
+                if category:
+                    confidence += 0.1
+                if len(snippet) > 100:
+                    confidence += 0.1
                 
                 coupon = Coupon(
                     title=title,
-                    code=None,  # Would need parsing
+                    code=code,
                     source_url=url,
                     city=city,
                     category=category,
-                    terms=snippet,
-                    confidence=0.5
+                    terms=snippet[:500],  # Limit terms length
+                    confidence=min(confidence, 1.0)
                 )
                 db.add(coupon)
         
         db.commit()
-        print("Coupon search completed")
+        print(f"Coupon search completed: processed {processed_count}/{len(queries)} queries")
     except Exception as e:
         print(f"Error in coupon search: {e}")
+        import traceback
+        traceback.print_exc()
         db.rollback()
     finally:
         db.close()
@@ -358,7 +497,7 @@ def generate_digests():
             
             # Get trending items
             trending_data = {}
-            for source_type in ["di_li", "blind", "xhs"]:
+            for source_type in ["di_li", "blind"]:
                 snapshots = db.query(TrendingSnapshot).filter(
                     TrendingSnapshot.source_type == source_type
                 ).order_by(TrendingSnapshot.rank).limit(5).all()

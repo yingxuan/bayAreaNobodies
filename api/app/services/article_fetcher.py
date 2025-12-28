@@ -18,7 +18,7 @@ def normalize_url(url: str) -> str:
         # Remove common tracking params
         tracking_params = {
             'utm_source', 'utm_medium', 'utm_campaign', 'utm_term', 'utm_content',
-            'fbclid', 'gclid', 'ref', 'source', 'campaign'
+            'fbclid', 'gclid', 'ref', 'source', 'campaign', 'xhsshare'
         }
         query_params = parse_qs(parsed.query, keep_blank_values=True)
         cleaned_params = {k: v for k, v in query_params.items() if k not in tracking_params}
@@ -28,6 +28,148 @@ def normalize_url(url: str) -> str:
         return urlunparse(new_parsed)
     except Exception:
         return url
+
+
+def detect_platform(url: str) -> str:
+    """
+    Detect platform from URL hostname
+    Returns: 'youtube', 'tiktok', 'instagram', or 'web'
+    """
+    if not url:
+        return 'web'
+    
+    url_lower = url.lower()
+    
+    # YouTube detection (youtube.com or youtu.be)
+    if 'youtube.com' in url_lower or 'youtu.be' in url_lower:
+        return 'youtube'
+    
+    # TikTok detection
+    if 'tiktok.com' in url_lower:
+        return 'tiktok'
+    
+    # Instagram detection
+    if 'instagram.com' in url_lower:
+        return 'instagram'
+    
+    # Default to web for all other sources
+    return 'web'
+
+
+def extract_video_id(url: str, platform: str) -> Optional[str]:
+    """
+    Extract video ID from platform URL
+    
+    Returns:
+        Video ID string or None
+    """
+    if not url or not platform:
+        return None
+    
+    try:
+        if platform == 'youtube':
+            # YouTube URL patterns:
+            # https://www.youtube.com/watch?v=VIDEO_ID
+            # https://youtu.be/VIDEO_ID
+            # https://www.youtube.com/embed/VIDEO_ID
+            parsed = urlparse(url)
+            
+            if 'youtu.be' in parsed.netloc:
+                # Short URL: youtu.be/VIDEO_ID
+                video_id = parsed.path.lstrip('/').split('?')[0]
+                return video_id if video_id else None
+            
+            # Regular YouTube URL
+            query_params = parse_qs(parsed.query)
+            if 'v' in query_params:
+                return query_params['v'][0]
+            
+            # Embed URL: youtube.com/embed/VIDEO_ID
+            if '/embed/' in parsed.path:
+                video_id = parsed.path.split('/embed/')[-1].split('?')[0]
+                return video_id if video_id else None
+        
+        elif platform == 'tiktok':
+            # TikTok URL patterns:
+            # https://www.tiktok.com/@username/video/VIDEO_ID
+            # https://vm.tiktok.com/CODE
+            parsed = urlparse(url)
+            
+            if '/video/' in parsed.path:
+                # Extract video ID from path
+                parts = parsed.path.split('/video/')
+                if len(parts) > 1:
+                    video_id = parts[-1].split('?')[0]
+                    return video_id if video_id else None
+        
+        elif platform == 'instagram':
+            # Instagram doesn't have a simple video ID in URL
+            # We'll use the post shortcode instead
+            # https://www.instagram.com/p/SHORTCODE/
+            # https://www.instagram.com/reel/SHORTCODE/
+            parsed = urlparse(url)
+            
+            # Extract shortcode from /p/ or /reel/
+            for pattern in ['/p/', '/reel/']:
+                if pattern in parsed.path:
+                    shortcode = parsed.path.split(pattern)[-1].split('/')[0].split('?')[0]
+                    return shortcode if shortcode else None
+    
+    except Exception as e:
+        print(f"Error extracting video ID from {url}: {e}")
+    
+    return None
+
+
+def extract_thumbnail_url(url: str, platform: str, video_id: Optional[str] = None) -> Optional[str]:
+    """
+    Generate thumbnail URL for platform content
+    
+    Returns:
+        Thumbnail URL string or None
+    """
+    if not url or not platform:
+        return None
+    
+    try:
+        if platform == 'youtube' and video_id:
+            # YouTube thumbnail: https://img.youtube.com/vi/VIDEO_ID/maxresdefault.jpg
+            return f"https://img.youtube.com/vi/{video_id}/maxresdefault.jpg"
+        
+        elif platform == 'tiktok':
+            # TikTok doesn't have a simple thumbnail API
+            # We'll need to fetch from oEmbed or use a placeholder
+            return None
+        
+        elif platform == 'instagram':
+            # Instagram doesn't have a simple thumbnail API
+            # We'll need to fetch from oEmbed or use a placeholder
+            return None
+    
+    except Exception as e:
+        print(f"Error generating thumbnail URL for {url}: {e}")
+    
+    return None
+
+
+def is_valid_content_url(url: str) -> bool:
+    """
+    Check if URL points to actual content (not homepage/explore pages)
+    Returns False for invalid URLs that should be skipped
+    """
+    if not url:
+        return False
+    
+    # Generic filtering for common invalid patterns
+    invalid_patterns = [
+        '/home',
+        '/search',
+    ]
+    
+    if any(pattern in url for pattern in invalid_patterns):
+        return False
+    
+    return True
 
 
 def fetch_article(url: str, timeout: int = 10) -> Tuple[Optional[str], Optional[str], Optional[datetime]]:
@@ -248,4 +390,75 @@ def extract_entities(text: Optional[str], title: Optional[str]) -> Tuple[list, l
     general_tags = [k for k in keywords if k in full_text]
     
     return list(set(company_tags)), list(set(city_hints)), list(set(general_tags))
+
+
+def extract_food_entities(text: Optional[str], title: Optional[str]) -> Tuple[list, list, list, Optional[str]]:
+    """
+    Extract food-focused entities: cities, food tags, and possible place name
+    This is a lightweight adapter for food content, not changing global extraction
+    
+    Returns:
+        Tuple of (city_hints, food_tags, general_tags, place_name)
+        - city_hints: Bay Area cities only
+        - food_tags: food-related keywords (boba, cafe, restaurant, dessert, etc.)
+        - general_tags: other relevant tags
+        - place_name: possible restaurant/place name (heuristic only, may be None)
+    """
+    if not text and not title:
+        return [], [], [], None
+    
+    full_text = ((title or "") + " " + (text or "")).lower()
+    
+    # Bay Area cities (same as general extraction)
+    cities = [
+        'sunnyvale', 'cupertino', 'san jose', 'palo alto', 'mountain view',
+        'fremont', 'santa clara', 'redwood city', 'menlo park', 'foster city',
+        'san mateo', 'burlingame', 'millbrae', 'san francisco', 'sf', 'oakland',
+        'berkeley', 'alameda', 'hayward', 'union city', 'newark'
+    ]
+    
+    city_hints = [c for c in cities if c in full_text]
+    
+    # Chinese food-related tags (focused on Bay Area Chinese food)
+    food_keywords = [
+        'boba', '奶茶', 'dim sum', 'hot pot', '火锅', '麻辣烫', '川菜', '粤菜',
+        '湘菜', '鲁菜', '东北菜', '上海菜', '北京菜', '烤鸭', '小笼包', '拉面',
+        'ramen', 'pho', '中餐', 'chinese food', 'chinese restaurant', '探店',
+        '美食', '新开', '新店', '推荐', 'review', 'vlog', 'foodie', 'cafe',
+        'restaurant', 'dining', 'food', 'dessert', 'bakery', 'brunch', 'lunch',
+        'dinner', 'breakfast', 'eat', 'drink'
+    ]
+    
+    food_tags = [k for k in food_keywords if k in full_text]
+    
+    # General tags (non-food related but still useful)
+    general_keywords = [
+        'new', 'opening', 'opened', 'review', 'recommend', 'best', 'top',
+        'must try', 'hidden gem', 'popular', 'trending'
+    ]
+    
+    general_tags = [k for k in general_keywords if k in full_text]
+    
+    # Try to extract place name (heuristic: look for quoted text or "at [Name]" patterns)
+    place_name = None
+    import re
+    
+    # Pattern 1: "at [Place Name]" or "from [Place Name]"
+    place_patterns = [
+        r'at\s+([A-Z][a-zA-Z\s&]+?)(?:\s+in|\s+on|\s+at|\.|,|$)',
+        r'from\s+([A-Z][a-zA-Z\s&]+?)(?:\s+in|\s+on|\.|,|$)',
+        r'"([A-Z][a-zA-Z\s&]+?)"',  # Quoted names
+    ]
+    
+    for pattern in place_patterns:
+        matches = re.findall(pattern, title or "", re.IGNORECASE)
+        if matches:
+            # Take first match, clean it up
+            candidate = matches[0].strip()
+            # Skip if it's too long (probably not a place name) or contains common words
+            if len(candidate) < 50 and candidate.lower() not in ['the', 'a', 'an', 'this', 'that']:
+                place_name = candidate
+                break
+    
+    return list(set(city_hints)), list(set(food_tags)), list(set(general_tags)), place_name
 

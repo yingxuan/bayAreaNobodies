@@ -38,6 +38,10 @@ class ArticleResponse(BaseModel):
     city_hints: Optional[str]
     company_tags: Optional[str]
     source_type: Optional[str]
+    platform: Optional[str] = None  # youtube, tiktok, instagram, web
+    video_id: Optional[str] = None  # Video ID for embedding
+    thumbnail_url: Optional[str] = None  # Thumbnail image URL
+    place_name: Optional[str] = None  # Extracted place/restaurant name (for food_radar)
     published_at: Optional[datetime]
     views: int
     saves: int
@@ -112,4 +116,39 @@ class DigestResponse(BaseModel):
 
     class Config:
         from_attributes = True
+
+
+class FoodRadarFeedResponse(BaseModel):
+    articles: List[ArticleResponse]
+    total: int
+    filters: dict
+
+
+class DealsFeedResponse(BaseModel):
+    coupons: List[CouponResponse]
+    total: int
+    filters: dict
+
+
+class StockData(BaseModel):
+    ticker: str
+    current_price: Optional[float]
+    change_percent: float
+    change_amount: Optional[float] = None  # Daily change in dollars
+    news: List[StockNewsItem]
+    news_count: int
+    financial_advice: Optional[str] = None  # Gemini AI financial advice
+    error: Optional[str] = None
+
+
+class WealthFeedResponse(BaseModel):
+    stocks: List[StockData]
+    total: int
+    updated_at: Optional[str] = None
+
+
+class GossipFeedResponse(BaseModel):
+    articles: List[ArticleResponse]
+    total: int
+    filters: dict
 

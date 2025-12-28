@@ -20,6 +20,14 @@ def get_cache_key(query: str, start: int = 1) -> str:
     return hashlib.md5(key_str.encode()).hexdigest()
 
 
+def check_quota_exceeded() -> bool:
+    """Check if Google CSE API quota has been exceeded"""
+    if not redis_client:
+        return False
+    quota_key = "google_cse:quota_exceeded"
+    return redis_client.exists(quota_key) > 0
+
+
 def search_google(
     query: str,
     site_domain: Optional[str] = None,
@@ -56,6 +64,15 @@ def search_google(
             "searchInformation": {"totalResults": "5"}
         }
     
+    # Check if quota exceeded
+    if check_quota_exceeded():
+        print(f"WARNING: Google CSE API quota exceeded. Skipping query: {query}")
+        return {
+            "items": [],
+            "searchInformation": {"totalResults": "0"},
+            "error": "API quota exceeded"
+        }
+    
     # Check cache
     cache_key = get_cache_key(query, start)
     if use_cache and redis_client:
@@ -90,13 +107,17 @@ def search_google(
             response.raise_for_status()
             data = response.json()
             
-            # Cache for 10 minutes
+            # Cache for 24 hours (86400 seconds) to reduce API calls
+            # For coupon searches, cache for 12 hours since they're daily
+            cache_ttl = 43200 if "dealmoon" in query.lower() or "dealnews" in query.lower() else 86400
             if use_cache and redis_client:
-                redis_client.setex(cache_key, 600, json.dumps(data))
+                redis_client.setex(cache_key, cache_ttl, json.dumps(data))
             
             return data
     except httpx.HTTPStatusError as e:
         error_msg = f"Error calling Google Search API: {e}"
+        is_quota_exceeded = False
+        
         # Try to get detailed error message
         try:
             error_data = e.response.json()
@@ -105,21 +126,30 @@ def search_google(
                 error_msg += f"\n  Error: {error_info.get('message', 'Unknown error')}"
                 if "errors" in error_info:
                     for err in error_info["errors"]:
-                        error_msg += f"\n  - {err.get('message', '')}"
+                        err_msg = err.get('message', '')
+                        error_msg += f"\n  - {err_msg}"
+                        # Check for quota exceeded
+                        if "429" in str(e.response.status_code) or "quota" in err_msg.lower() or "too many requests" in err_msg.lower():
+                            is_quota_exceeded = True
         except:
             error_msg += f"\n  Response: {e.response.text[:200]}"
+            if e.response.status_code == 429:
+                is_quota_exceeded = True
+        
         print(error_msg)
-        # Return mock data on error
+        
+        # If quota exceeded, set a flag in Redis to prevent further calls
+        if is_quota_exceeded and redis_client:
+            quota_key = "google_cse:quota_exceeded"
+            # Set flag for 24 hours (quota resets daily)
+            redis_client.setex(quota_key, 86400, "1")
+            print("WARNING: Google CSE API quota exceeded. Setting flag to prevent further calls for 24 hours.")
+        
+        # Return empty results on error (don't return mock data)
         return {
-            "items": [
-                {
-                    "title": f"Error Result {i}",
-                    "link": f"https://example.com/error{i}",
-                    "snippet": f"Error fetching: {query}"
-                }
-                for i in range(1, min(num + 1, 3))
-            ],
-            "searchInformation": {"totalResults": "0"}
+            "items": [],
+            "searchInformation": {"totalResults": "0"},
+            "error": error_msg
         }
     except Exception as e:
         print(f"Error calling Google Search API: {e}")
@@ -155,11 +185,21 @@ def fetch_multiple_pages(
     Returns:
         List of result items
     """
+    # Check quota before starting
+    if check_quota_exceeded():
+        print(f"WARNING: Google CSE API quota exceeded. Skipping fetch for query: {query}")
+        return []
+    
     all_items = []
     start = 1
     page_size = 10
     
     while len(all_items) < max_results:
+        # Check quota before each page
+        if check_quota_exceeded():
+            print(f"WARNING: Quota exceeded during pagination. Returning {len(all_items)} items.")
+            break
+        
         results = search_google(
             query=query,
             site_domain=site_domain,
@@ -167,6 +207,11 @@ def fetch_multiple_pages(
             start=start,
             date_restrict=date_restrict
         )
+        
+        # Check for errors
+        if results.get("error"):
+            print(f"Error fetching page {start}: {results.get('error')}")
+            break
         
         items = results.get("items", [])
         if not items:

@@ -26,3 +26,15 @@ body {
   }
 }
 
+.food-grid {
+  display: grid !important;
+  grid-template-columns: repeat(2, 1fr) !important;
+  gap: 1.5rem;
+}
+
+@media (max-width: 768px) {
+  .food-grid {
+    grid-template-columns: 1fr !important;
+  }
+}
+
