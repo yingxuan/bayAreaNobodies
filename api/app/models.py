@@ -116,6 +116,8 @@ class Coupon(Base):
     title = Column(Text, nullable=False)
     code = Column(String, nullable=True)
     source_url = Column(Text, nullable=True)
+    image_url = Column(Text, nullable=True)  # Image URL for coupon/deal
+    video_url = Column(Text, nullable=True)  # Video URL for coupon/deal
     start_at = Column(DateTime(timezone=True), nullable=True)
     end_at = Column(DateTime(timezone=True), nullable=True)
     city = Column(String, nullable=True, index=True)

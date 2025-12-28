@@ -6,8 +6,10 @@ from typing import List, Dict, Optional
 from datetime import datetime, timedelta
 import hashlib
 
-GOOGLE_CSE_API_KEY = os.getenv("GOOGLE_CSE_API_KEY")
-GOOGLE_CSE_ID = os.getenv("GOOGLE_CSE_ID")
+# Single CSE API key and ID
+GOOGLE_CSE_API_KEY = os.getenv("GOOGLE_CSE_API_KEY", "")
+GOOGLE_CSE_ID = os.getenv("GOOGLE_CSE_ID", "")
+
 GOOGLE_CSE_ENDPOINT = os.getenv("GOOGLE_CSE_ENDPOINT", "https://www.googleapis.com/customsearch/v1")
 REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379/0")
 DAILY_CSE_BUDGET = int(os.getenv("DAILY_CSE_BUDGET", "80"))
@@ -43,17 +45,16 @@ def check_budget_exceeded() -> bool:
 
 
 def increment_usage() -> int:
-    """Increment daily usage counter and return current count"""
+    """Increment daily usage counter and return current usage"""
     if not redis_client:
         return 0
+    
     usage_key = get_daily_usage_key()
-    # Set expiration to end of day (86400 seconds = 24 hours)
-    # But we'll set it to 25 hours to be safe
-    current = redis_client.incr(usage_key)
-    if current == 1:
-        # First increment today, set expiration
+    usage = redis_client.incr(usage_key)
+    if usage == 1:
         redis_client.expire(usage_key, 90000)  # 25 hours
-    return current
+    
+    return usage
 
 
 def search_google(
@@ -108,6 +109,9 @@ def search_google(
             "error": "quota_exceeded"
         }
     
+    api_key = GOOGLE_CSE_API_KEY
+    cse_id = GOOGLE_CSE_ID
+    
     # Prepare query - remove site: if siteSearch is used
     search_query = query
     if site_domain and "site:" in query.lower():
@@ -116,8 +120,8 @@ def search_google(
         search_query = re.sub(r'site:\S+\s*', '', query, flags=re.IGNORECASE).strip()
     
     params = {
-        "key": GOOGLE_CSE_API_KEY,
-        "cx": GOOGLE_CSE_ID,
+        "key": api_key,
+        "cx": cse_id,
         "q": search_query,
         "num": min(num, 10),
         "start": start
@@ -136,8 +140,8 @@ def search_google(
             data = response.json()
             
             # Increment usage counter (only on successful API call)
-            usage_count = increment_usage()
-            print(f"CSE API call #{usage_count}/{DAILY_CSE_BUDGET} for query: {query[:50]}...")
+            usage = increment_usage()
+            print(f"CSE API call: usage={usage}/{DAILY_CSE_BUDGET} for query: {query[:50]}...")
             
             # Cache for 30 minutes (1800 seconds)
             if use_cache and redis_client:
@@ -170,8 +174,8 @@ def search_google(
         
         # If quota exceeded (429), increment usage to track it
         if is_quota_exceeded:
-            increment_usage()
-            print("WARNING: Google CSE API returned 429 error. Incrementing usage counter.")
+            usage = increment_usage()
+            print(f"WARNING: Google CSE API returned 429 error. Incrementing usage counter. Current usage: {usage}/{DAILY_CSE_BUDGET}")
         
         # Return empty results on error
         return {

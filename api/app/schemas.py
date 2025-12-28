@@ -97,6 +97,8 @@ class CouponResponse(BaseModel):
     title: str
     code: Optional[str]
     source_url: Optional[str]
+    image_url: Optional[str] = None  # Image URL for coupon/deal
+    video_url: Optional[str] = None  # Video URL for coupon/deal
     start_at: Optional[datetime]
     end_at: Optional[datetime]
     city: Optional[str]
@@ -142,7 +144,7 @@ class StockData(BaseModel):
 
 
 class WealthFeedResponse(BaseModel):
-    stocks: List[StockData]
+    articles: List[ArticleResponse]
     total: int
     updated_at: Optional[str] = None
 

@@ -2,35 +2,68 @@ import httpx
 import os
 import redis
 import json
-from typing import List, Optional
+from typing import List, Optional, Dict, Tuple
 from datetime import datetime, timedelta
 from app.schemas import StockNewsItem
 
+# Optional imports - handle gracefully if not installed
+try:
+    import yfinance as yf
+    YFINANCE_AVAILABLE = True
+except ImportError:
+    YFINANCE_AVAILABLE = False
+    print("Warning: yfinance not installed. Stock prices will use fallback methods.")
+
+try:
+    import google.generativeai as genai
+    GEMINI_AVAILABLE = True
+except ImportError:
+    GEMINI_AVAILABLE = False
+    print("Warning: google-generativeai not installed. Financial advice will be unavailable.")
+
 FINNHUB_API_KEY = os.getenv("FINNHUB_API_KEY")
+GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379/0")
 redis_client = redis.from_url(REDIS_URL, decode_responses=True) if REDIS_URL else None
 
 
-def get_stock_price(ticker: str) -> float:
+def get_stock_price(ticker: str) -> Optional[float]:
     """
-    Get current stock price (mock implementation for MVP)
-    In production, use Finnhub or Polygon API
+    Get current stock price using Yahoo Finance (yfinance)
+    Note: Google Finance doesn't have a public API, so we use Yahoo Finance which is the industry standard.
+    
+    Returns:
+        Current price or None if error
     """
-    # Mock prices for common stocks
-    mock_prices = {
-        "NVDA": 450.0,
-        "AAPL": 180.0,
-        "GOOGL": 140.0,
-        "MSFT": 380.0,
-        "AMZN": 150.0,
-        "META": 320.0,
-        "TSLA": 250.0,
-    }
+    cache_key = f"stock_price:{ticker}"
     
-    if ticker.upper() in mock_prices:
-        return mock_prices[ticker.upper()]
+    # Check cache (5 minute cache)
+    if redis_client:
+        cached = redis_client.get(cache_key)
+        if cached:
+            try:
+                return float(cached)
+            except:
+                pass
     
-    # If Finnhub key is available, try real API
+    if YFINANCE_AVAILABLE:
+        try:
+            stock = yf.Ticker(ticker.upper())
+            info = stock.info
+            
+            # Get current price from 'currentPrice' or 'regularMarketPrice'
+            current_price = info.get('currentPrice') or info.get('regularMarketPrice')
+            
+            if current_price:
+                price = float(current_price)
+                # Cache for 5 minutes
+                if redis_client:
+                    redis_client.setex(cache_key, 300, str(price))
+                return price
+        except Exception as e:
+            print(f"Error fetching stock price from yfinance for {ticker}: {e}")
+    
+    # Fallback to Finnhub if available
     if FINNHUB_API_KEY:
         try:
             url = f"https://finnhub.io/api/v1/quote?symbol={ticker.upper()}&token={FINNHUB_API_KEY}"
@@ -39,17 +72,82 @@ def get_stock_price(ticker: str) -> float:
                 if response.status_code == 200:
                     data = response.json()
                     if data.get("c"):  # current price
-                        return float(data["c"])
+                        price = float(data["c"])
+                        if redis_client:
+                            redis_client.setex(cache_key, 300, str(price))
+                        return price
         except Exception as e:
-            print(f"Error fetching stock price for {ticker}: {e}")
+            print(f"Error fetching stock price from Finnhub for {ticker}: {e}")
     
-    # Default mock price
-    return 100.0
+    return None
+
+
+def get_stock_daily_trend(ticker: str) -> Tuple[Optional[float], Optional[float]]:
+    """
+    Get daily price change and change percent using Yahoo Finance
+    
+    Returns:
+        Tuple of (change_amount, change_percent) or (None, None) if error
+    """
+    cache_key = f"stock_trend:{ticker}"
+    
+    # Check cache (5 minute cache)
+    if redis_client:
+        cached = redis_client.get(cache_key)
+        if cached:
+            try:
+                data = json.loads(cached)
+                return data.get('change'), data.get('change_percent')
+            except:
+                pass
+    
+    if YFINANCE_AVAILABLE:
+        try:
+            stock = yf.Ticker(ticker.upper())
+            hist = stock.history(period="2d")  # Get last 2 days to calculate change
+            
+            if len(hist) >= 2:
+                # Get today's and yesterday's close prices
+                today_close = hist.iloc[-1]['Close']
+                yesterday_close = hist.iloc[-2]['Close']
+                
+                change = float(today_close - yesterday_close)
+                change_percent = float((change / yesterday_close) * 100) if yesterday_close > 0 else 0.0
+                
+                # Cache for 5 minutes
+                if redis_client:
+                    redis_client.setex(
+                        cache_key,
+                        300,
+                        json.dumps({'change': change, 'change_percent': change_percent})
+                    )
+                
+                return change, change_percent
+            elif len(hist) == 1:
+                # Only one day of data, use current price vs previous close
+                current_price = get_stock_price(ticker)
+                if current_price:
+                    prev_close = hist.iloc[0]['Close']
+                    change = float(current_price - prev_close)
+                    change_percent = float((change / prev_close) * 100) if prev_close > 0 else 0.0
+                    
+                    if redis_client:
+                        redis_client.setex(
+                            cache_key,
+                            300,
+                            json.dumps({'change': change, 'change_percent': change_percent})
+                        )
+                    
+                    return change, change_percent
+        except Exception as e:
+            print(f"Error fetching stock trend from yfinance for {ticker}: {e}")
+    
+    return None, None
 
 
 def get_stock_news(ticker: str, range_hours: int = 24) -> List[StockNewsItem]:
     """
-    Get stock news from Finnhub or return mock data
+    Get stock news from Yahoo Finance and Finnhub
     
     Args:
         ticker: Stock ticker symbol
@@ -60,16 +158,45 @@ def get_stock_news(ticker: str, range_hours: int = 24) -> List[StockNewsItem]:
     """
     cache_key = f"stock_news:{ticker}:{range_hours}"
     
-    # Check cache
+    # Check cache (15 minute cache)
     if redis_client:
         cached = redis_client.get(cache_key)
         if cached:
-            data = json.loads(cached)
-            return [StockNewsItem(**item) for item in data]
+            try:
+                data = json.loads(cached)
+                return [StockNewsItem(**item) for item in data]
+            except:
+                pass
     
     news_items = []
     
-    if FINNHUB_API_KEY:
+    # Try Yahoo Finance first
+    if YFINANCE_AVAILABLE:
+        try:
+            stock = yf.Ticker(ticker.upper())
+            news = stock.news
+            
+            for item in news[:10]:  # Limit to 10 items
+                try:
+                    published_at = None
+                    if item.get("providerPublishTime"):
+                        published_at = datetime.fromtimestamp(item["providerPublishTime"])
+                    
+                    news_items.append(StockNewsItem(
+                        headline=item.get("title", ""),
+                        summary=item.get("summary", ""),
+                        url=item.get("link", ""),
+                        published_at=published_at,
+                        source=item.get("publisher", "Yahoo Finance")
+                    ))
+                except Exception as e:
+                    print(f"Error parsing news item for {ticker}: {e}")
+                    continue
+        except Exception as e:
+            print(f"Error fetching news from Yahoo Finance for {ticker}: {e}")
+    
+    # Fallback to Finnhub if available and we don't have enough news
+    if len(news_items) < 5 and FINNHUB_API_KEY:
         try:
             url = f"https://finnhub.io/api/v1/company-news"
             params = {
@@ -94,28 +221,15 @@ def get_stock_news(ticker: str, range_hours: int = 24) -> List[StockNewsItem]:
                                 summary=item.get("summary", ""),
                                 url=item.get("url", ""),
                                 published_at=published_at,
-                                source=item.get("source", "")
+                                source=item.get("source", "Finnhub")
                             ))
                         except Exception:
                             continue
         except Exception as e:
             print(f"Error fetching stock news from Finnhub: {e}")
     
-    # Return mock data if no real data
-    if not news_items:
-        news_items = [
-            StockNewsItem(
-                headline=f"{ticker} shows strong performance",
-                summary=f"Mock news summary for {ticker}",
-                url=f"https://example.com/news/{ticker.lower()}",
-                published_at=datetime.now() - timedelta(hours=i),
-                source="Mock News"
-            )
-            for i in range(3)
-        ]
-    
     # Cache for 15 minutes
-    if redis_client:
+    if redis_client and news_items:
         redis_client.setex(
             cache_key,
             900,
@@ -124,3 +238,70 @@ def get_stock_news(ticker: str, range_hours: int = 24) -> List[StockNewsItem]:
     
     return news_items
 
+
+def get_financial_advice(ticker: str, current_price: Optional[float], 
+                         change_percent: float, news_items: List[StockNewsItem]) -> Optional[str]:
+    """
+    Get financial advice from Gemini AI based on stock data
+    
+    Args:
+        ticker: Stock ticker symbol
+        current_price: Current stock price
+        change_percent: Daily change percent
+        news_items: Recent news items
+    
+    Returns:
+        Financial advice string or None if error
+    """
+    if not GEMINI_API_KEY or not GEMINI_AVAILABLE:
+        return None
+    
+    cache_key = f"stock_advice:{ticker}"
+    
+    # Check cache (1 hour cache)
+    if redis_client:
+        cached = redis_client.get(cache_key)
+        if cached:
+            return cached
+    
+    try:
+        genai.configure(api_key=GEMINI_API_KEY)
+        model = genai.GenerativeModel('gemini-pro')
+        
+        # Build context for Gemini
+        price_info = f"Current price: ${current_price:.2f}" if current_price else "Price: N/A"
+        change_info = f"Daily change: {change_percent:+.2f}%"
+        
+        news_summaries = []
+        for news in news_items[:5]:  # Top 5 news items
+            news_summaries.append(f"- {news.headline}")
+        
+        news_text = "\n".join(news_summaries) if news_summaries else "No recent news available."
+        
+        prompt = f"""You are a financial advisor. Provide a brief, actionable financial analysis for {ticker} stock.
+
+Stock: {ticker}
+{price_info}
+{change_info}
+
+Recent News:
+{news_text}
+
+Please provide:
+1. A brief assessment of the stock's current situation (2-3 sentences)
+2. Key factors to watch (2-3 bullet points)
+3. A concise recommendation (1-2 sentences): Buy, Hold, or Sell
+
+Keep the response under 200 words and be practical and data-driven."""
+
+        response = model.generate_content(prompt)
+        advice = response.text.strip()
+        
+        # Cache for 1 hour
+        if redis_client:
+            redis_client.setex(cache_key, 3600, advice)
+        
+        return advice
+    except Exception as e:
+        print(f"Error getting financial advice from Gemini for {ticker}: {e}")
+        return None

@@ -114,9 +114,8 @@ def process_search_query(query_obj: SourceQuery, db: Session):
         print(f"Processing query {query_obj.id}: {query_obj.query}")
         
         # Fetch search results
-        # For food_radar queries, use longer date range (30 days) or no restriction
-        # because YouTube content may be older but still relevant
-        date_restrict = None if query_obj.source_type == "food_radar" else "d14"
+        # Use 24-hour look back window for all queries
+        date_restrict = "d1"
         results = fetch_multiple_pages(
             query=query_obj.query,
             site_domain=query_obj.site_domain,
@@ -158,10 +157,10 @@ def process_search_query(query_obj: SourceQuery, db: Session):
                 print(f"Skipping {url}: xiaohongshu is no longer used")
                 continue
             
-            # For food_radar, skip Blind and di_li URLs (we only want food content from other sources)
+            # For food_radar, skip Blind URLs (we allow 1point3acres.com and huaren.us for food content)
             if query_obj.source_type == "food_radar":
-                if "teamblind.com" in url.lower() or "1point3acres.com" in url.lower():
-                    print(f"Skipping {url}: Blind/di_li content not allowed in food_radar")
+                if "teamblind.com" in url.lower():
+                    print(f"Skipping {url}: Blind content not allowed in food_radar")
                     continue
             
             normalized = normalize_url(url)
@@ -343,7 +342,7 @@ def create_trending_snapshots():
 
 
 def run_coupon_search():
-    """Search for coupons from dealmoon.com and dealnews.com for Bay Area food deals"""
+    """Search for coupons from dealmoon.com, 1point3acres.com, and huaren.us for Bay Area deals"""
     from app.services.google_search import check_budget_exceeded
     
     # Check budget before starting
@@ -353,14 +352,15 @@ def run_coupon_search():
     
     db = SessionLocal()
     try:
-        # Optimized queries: reduced from 15 to 8 queries
-        # Focus on broader searches that cover multiple cities and categories
+        # Search dealmoon.com, 1point3acres.com, and huaren.us for deals (include community posts)
         queries = [
-            "site:dealmoon.com Bay Area food restaurant",
-            "site:dealmoon.com Bay Area boba 奶茶",
-            "site:dealmoon.com San Francisco San Jose food",
-            "site:dealnews.com Bay Area food restaurant",
-            "site:dealnews.com Bay Area boba",
+            "site:dealmoon.com Bay Area coupon deal",
+            "site:dealmoon.com Bay Area discount",
+            "site:dealmoon.com San Francisco San Jose deal",
+            "site:1point3acres.com Bay Area coupon deal",
+            "site:1point3acres.com 湾区 优惠 折扣",
+            "site:huaren.us Bay Area coupon deal",
+            "site:huaren.us 湾区 优惠 折扣",
         ]
         
         processed_count = 0
@@ -370,7 +370,8 @@ def run_coupon_search():
                 print(f"WARNING: Budget exceeded during coupon search. Processed {processed_count} queries.")
                 break
             
-            results = search_google(query, num=10, date_restrict="d14")
+            # Use 24-hour lookback for deals
+            results = search_google(query, num=10, date_restrict="d1")
             
             # Check if error occurred
             if results.get("error"):
@@ -385,7 +386,11 @@ def run_coupon_search():
                 title = item.get("title", "")
                 snippet = item.get("snippet", "")
                 
-                if not url or ("dealmoon.com" not in url and "dealnews.com" not in url):
+                # Google CSE sometimes includes pagemap with image info
+                pagemap = item.get("pagemap", {})
+                
+                # Accept URLs from dealmoon.com, 1point3acres.com, or huaren.us
+                if not url or not any(domain in url for domain in ["dealmoon.com", "1point3acres.com", "huaren.us"]):
                     continue
                 
                 # Simple extraction of coupon info
@@ -411,7 +416,7 @@ def run_coupon_search():
                         city = c
                         break
                 
-                # Extract category (focus on food-related)
+                # Extract category
                 category = None
                 text_lower = (title + snippet).lower()
                 if "boba" in text_lower or "奶茶" in text_lower or "milk tea" in text_lower:
@@ -422,8 +427,14 @@ def run_coupon_search():
                     category = "cafe"
                 elif "dessert" in text_lower or "bakery" in text_lower:
                     category = "dessert"
+                elif "shopping" in text_lower or "store" in text_lower or "retail" in text_lower:
+                    category = "shopping"
+                elif "travel" in text_lower or "hotel" in text_lower or "flight" in text_lower:
+                    category = "travel"
+                elif "tech" in text_lower or "electronics" in text_lower or "gadget" in text_lower:
+                    category = "tech"
                 else:
-                    category = "food"  # Default to food
+                    category = "general"  # Default to general
                 
                 # Try to extract coupon code from snippet
                 code = None
@@ -439,6 +450,42 @@ def run_coupon_search():
                         code = match.group(1).strip()
                         break
                 
+                # Extract image and video URLs
+                from app.services.coupon_extractor import extract_media_from_snippet
+                
+                image_url = None
+                video_url = None
+                
+                # Try to extract from Google's pagemap first (most reliable)
+                if pagemap:
+                    # Google includes cse_image with actual deal images
+                    cse_images = pagemap.get("cse_image", [])
+                    if cse_images and isinstance(cse_images, list) and len(cse_images) > 0:
+                        img_data = cse_images[0]
+                        image_url = img_data.get("src") or img_data.get("url")
+                    
+                    # Also check metatags for og:image (fallback)
+                    if not image_url:
+                        metatags = pagemap.get("metatags", [])
+                        if metatags and isinstance(metatags, list) and len(metatags) > 0:
+                            meta = metatags[0]
+                            image_url = meta.get("og:image") or meta.get("twitter:image")
+                    
+                    # Check for video information
+                    videoobject = pagemap.get("videoobject", [])
+                    if videoobject and isinstance(videoobject, list) and len(videoobject) > 0:
+                        video_data = videoobject[0]
+                        video_url = video_data.get("embedurl") or video_data.get("contenturl")
+                
+                # Quick extraction from snippet (for YouTube links, etc.)
+                if not video_url:
+                    snippet_image, snippet_video = extract_media_from_snippet(snippet, url)
+                    if snippet_video:
+                        video_url = snippet_video
+                    # Only use snippet image if no pagemap image found
+                    if not image_url and snippet_image:
+                        image_url = snippet_image
+                
                 # Calculate confidence based on how much info we have
                 confidence = 0.5
                 if code:
@@ -449,11 +496,15 @@ def run_coupon_search():
                     confidence += 0.1
                 if len(snippet) > 100:
                     confidence += 0.1
+                if image_url or video_url:
+                    confidence += 0.1  # Bonus for having media
                 
                 coupon = Coupon(
                     title=title,
                     code=code,
                     source_url=url,
+                    image_url=image_url,
+                    video_url=video_url,
                     city=city,
                     category=category,
                     terms=snippet[:500],  # Limit terms length
@@ -568,10 +619,10 @@ def generate_digests():
 
 def start_scheduler():
     """Start the background scheduler"""
-    # Search jobs: run every hour for queries with interval_min=60
+    # Search jobs: run daily at 2 AM with 24-hour look back window
     scheduler.add_job(
         run_search_jobs,
-        trigger=IntervalTrigger(minutes=60),
+        trigger=CronTrigger(hour=2, minute=0),
         id="search_jobs",
         replace_existing=True
     )
