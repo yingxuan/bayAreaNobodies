@@ -52,7 +52,7 @@ export default function Home() {
 function TrendingTab() {
   const [articles, setArticles] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
-  const [source, setSource] = useState<string>('')
+  const [source, setSource] = useState<string>('di_li')
 
   useEffect(() => {
     fetchTrending()
@@ -63,10 +63,16 @@ function TrendingTab() {
     try {
       const params = new URLSearchParams()
       if (source) params.append('source_type', source)
-      const res = await fetch(`${API_URL}/trending?${params}`)
+      const url = `${API_URL}/trending?${params}`
+      console.log('Fetching trending from:', url)
+      const res = await fetch(url)
+      console.log('Response status:', res.status)
       if (res.ok) {
         const data = await res.json()
+        console.log('Received data:', data)
         setArticles(data.articles || [])
+      } else {
+        console.error('API error:', res.status, await res.text())
       }
     } catch (error) {
       console.error('Error fetching trending:', error)
@@ -75,7 +81,7 @@ function TrendingTab() {
     }
   }
 
-  if (loading) return <div>Loading trending articles...</div>
+  if (loading) return <div className="text-center py-8">Loading trending articles...</div>
 
   return (
     <div className="space-y-4">
@@ -93,8 +99,13 @@ function TrendingTab() {
         </select>
       </div>
 
-      <div className="grid gap-4">
-        {articles.map((article) => (
+      {articles.length === 0 ? (
+        <div className="text-center py-8 text-gray-500">
+          No trending articles found. Articles will appear here once background jobs fetch them.
+        </div>
+      ) : (
+        <div className="grid gap-4">
+          {articles.map((article) => (
           <Link
             key={article.id}
             href={`/article/${article.id}`}
@@ -108,7 +119,8 @@ function TrendingTab() {
             </div>
           </Link>
         ))}
-      </div>
+        </div>
+      )}
     </div>
   )
 }
