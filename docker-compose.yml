@@ -1,0 +1,79 @@
+version: '3.8'
+
+services:
+  postgres:
+    image: postgres:15-alpine
+    container_name: llm4luck_postgres
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: llm4luck
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    container_name: llm4luck_redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  api:
+    build:
+      context: ./api
+      dockerfile: Dockerfile
+    container_name: llm4luck_api
+    environment:
+      DATABASE_URL: postgresql://postgres:postgres@postgres:5432/llm4luck
+      REDIS_URL: redis://redis:6379/0
+      GOOGLE_CSE_API_KEY: ${GOOGLE_CSE_API_KEY:-}
+      GOOGLE_CSE_ID: ${GOOGLE_CSE_ID:-}
+      GOOGLE_CSE_ENDPOINT: ${GOOGLE_CSE_ENDPOINT:-https://www.googleapis.com/customsearch/v1}
+      FINNHUB_API_KEY: ${FINNHUB_API_KEY:-}
+      SECRET_KEY: ${SECRET_KEY:-dev-secret-key-change-in-production}
+      TZ: America/Los_Angeles
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./api:/app
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    command: uvicorn main:app --host 0.0.0.0 --port 8000 --reload
+
+  web:
+    build:
+      context: ./web
+      dockerfile: Dockerfile
+    container_name: llm4luck_web
+    environment:
+      NEXT_PUBLIC_API_URL: http://localhost:8000
+    ports:
+      - "3000:3000"
+    volumes:
+      - ./web:/app
+      - /app/node_modules
+      - /app/.next
+    depends_on:
+      - api
+    command: npm run dev
+
+volumes:
+  postgres_data:
+  redis_data:
+
