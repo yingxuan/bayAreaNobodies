@@ -16,7 +16,29 @@ def get_trending(
     limit: int = Query(20, ge=1, le=100),
     db: Session = Depends(get_db)
 ):
-    query = db.query(Article).filter(Article.final_score > 0)
+    from sqlalchemy import not_, or_
+    
+    # Filter out sample articles by URL patterns
+    sample_patterns = [
+        Article.url.like('%thread-123%'),
+        Article.url.like('%post/layoff-2024%'),
+        Article.url.like('%post/comp-2024%'),
+        Article.url.like('%post/new-grad-2024%'),
+        Article.url.like('%post/promo-2024%'),
+        Article.url.like('%post/offer-2024%'),
+        Article.url.like('%explore/123%'),
+        Article.url.like('%explore/234%'),
+        Article.url.like('%explore/345%'),
+        Article.url.like('%explore/456%'),
+        Article.url.like('%explore/567%'),
+        Article.url.like('%explore/678%'),
+        Article.url.like('%example.com%'),
+    ]
+    
+    query = db.query(Article).filter(
+        Article.final_score > 0,
+        not_(or_(*sample_patterns))  # Exclude sample articles
+    )
     
     if source_type:
         try:

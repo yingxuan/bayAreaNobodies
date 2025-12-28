@@ -78,36 +78,97 @@ def fetch_article(url: str, timeout: int = 10) -> Tuple[Optional[str], Optional[
                         break
             
             # Extract main content
-            content_selectors = [
-                'article',
-                '[role="main"]',
-                '.content',
-                '.post-content',
-                '#content',
-                'main'
-            ]
-            
+            # Try site-specific selectors first
             main_content = None
-            for selector in content_selectors:
-                elem = soup.select_one(selector)
-                if elem:
-                    main_content = elem
-                    break
+            
+            # 1point3acres specific selectors
+            if '1point3acres.com' in url:
+                site_specific_selectors = [
+                    '.thread-content',  # Main thread content
+                    '.post-content',    # Post content
+                    '#thread-content',  # Thread content by ID
+                    '.thread-body',     # Thread body
+                    '[class*="thread"]', # Any thread-related class
+                    '[class*="post-body"]', # Post body
+                    '[id*="post"]',     # Post by ID
+                ]
+                for selector in site_specific_selectors:
+                    elem = soup.select_one(selector)
+                    if elem:
+                        main_content = elem
+                        break
+            
+            # Generic selectors
+            if not main_content:
+                content_selectors = [
+                    'article',
+                    '[role="main"]',
+                    '.content',
+                    '.post-content',
+                    '#content',
+                    'main',
+                    '[class*="content"]',
+                    '[class*="article"]',
+                ]
+                
+                for selector in content_selectors:
+                    elem = soup.select_one(selector)
+                    if elem:
+                        main_content = elem
+                        break
             
             if not main_content:
                 main_content = soup.find('body')
             
             if main_content:
-                # Remove script and style elements
-                for script in main_content(["script", "style", "nav", "footer", "header", "aside"]):
+                # Remove script and style elements, plus navigation
+                for script in main_content(["script", "style", "nav", "footer", "header", "aside", 
+                                           "form", "button", "[class*='nav']", "[class*='menu']",
+                                           "[class*='sidebar']", "[class*='header']", "[class*='footer']"]):
                     script.decompose()
                 
                 text = main_content.get_text(separator='\n', strip=True)
                 # Clean up whitespace
                 text = re.sub(r'\n\s*\n', '\n\n', text)
                 text = text.strip()
+                
+                # For 1point3acres, try to extract just the post text, removing navigation
+                if '1point3acres.com' in url and len(text) < 1000:
+                    # Try to find the actual post text in common patterns
+                    post_patterns = [
+                        soup.select_one('[class*="message"]'),
+                        soup.select_one('[class*="post"]'),
+                        soup.select_one('[id*="post"]'),
+                        soup.select_one('[class*="thread"]'),
+                    ]
+                    for pattern in post_patterns:
+                        if pattern:
+                            post_text = pattern.get_text(separator='\n', strip=True)
+                            if len(post_text) > len(text) and len(post_text) > 200:
+                                text = post_text
+                                break
             else:
                 text = soup.get_text(separator='\n', strip=True)
+            
+            # Check for login-required pages (common patterns)
+            login_indicators = [
+                '您需要 登录',
+                '需要 登录',
+                '没有帐号',
+                'login required',
+                'please log in',
+                'sign in to view',
+                'register to view'
+            ]
+            
+            # If content is mostly login prompt, return None
+            if text and any(indicator in text for indicator in login_indicators):
+                # Check if login prompt is a significant portion of content
+                text_lower = text.lower()
+                login_portion = sum(len(ind) for ind in login_indicators if ind.lower() in text_lower)
+                if len(text) < 500 or login_portion > len(text) * 0.3:
+                    print(f"Skipping {url}: login-required page")
+                    return None, None, None
             
             # Try to extract published date
             published_at = None

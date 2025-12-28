@@ -49,15 +49,29 @@ def calculate_scores(article: Article, search_rank: int, max_rank: int = 100):
     # Freshness score (based on published_at or fetched_at)
     now = datetime.now(pytz.UTC)
     if article.published_at:
-        age_hours = (now - article.published_at).total_seconds() / 3600
+        # Ensure published_at is a timezone-aware datetime object
+        pub_date = article.published_at
+        if isinstance(pub_date, str):
+            from dateutil import parser
+            try:
+                pub_date = parser.parse(pub_date)
+            except:
+                pub_date = None
+        if pub_date:
+            # Make timezone-aware if naive
+            if pub_date.tzinfo is None:
+                pub_date = pytz.UTC.localize(pub_date)
+            age_hours = (now - pub_date).total_seconds() / 3600
+        else:
+            age_hours = (now - article.fetched_at).total_seconds() / 3600
     else:
         age_hours = (now - article.fetched_at).total_seconds() / 3600
     
-    # Freshness decays over time (max score for < 24h, decays to 0 at 7 days)
+    # Freshness decays over time (max score for < 24h, decays to 0 at 14 days)
     if age_hours < 24:
         article.freshness_score = 1.0
-    elif age_hours < 168:  # 7 days
-        article.freshness_score = max(0, 1.0 - (age_hours - 24) / 144)
+    elif age_hours < 336:  # 14 days
+        article.freshness_score = max(0, 1.0 - (age_hours - 24) / 312)
     else:
         article.freshness_score = 0.0
     
@@ -88,7 +102,7 @@ def process_search_query(query_obj: SourceQuery, db: Session):
             query=query_obj.query,
             site_domain=query_obj.site_domain,
             max_results=30,
-            date_restrict="d7"  # Last 7 days
+            date_restrict="d14"  # Last 14 days
         )
         
         if not results:
@@ -134,6 +148,14 @@ def process_search_query(query_obj: SourceQuery, db: Session):
             if not text or len(text) < 100:
                 print(f"Skipping {url}: insufficient content")
                 continue
+            
+            # Check for login-required content (common patterns in Chinese sites)
+            login_indicators = ['您需要 登录', '需要 登录', '没有帐号', '登录 才可以']
+            if any(indicator in text for indicator in login_indicators):
+                # If login prompt is a significant portion, skip
+                if len(text) < 500 or sum(len(ind) for ind in login_indicators if ind in text) > len(text) * 0.2:
+                    print(f"Skipping {url}: login-required page")
+                    continue
             
             # Compute content hash for deduplication
             content_hash = compute_content_hash(title, text)
@@ -242,7 +264,7 @@ def run_coupon_search():
         ]
         
         for query in queries:
-            results = search_google(query, num=10, date_restrict="d7")
+            results = search_google(query, num=10, date_restrict="d14")
             items = results.get("items", [])
             
             for item in items:
