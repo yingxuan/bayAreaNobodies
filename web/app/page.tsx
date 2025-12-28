@@ -1,13 +1,13 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import Link from 'next/link'
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'
 
 export default function Home() {
-  console.log('[Home] Component rendering, activeTab:', 'food')
-  const [activeTab, setActiveTab] = useState<'food' | 'deals' | 'wealth' | 'gossip'>('food')
+  console.log('[Home] Component rendering, activeTab:', 'wealth')
+  const [activeTab, setActiveTab] = useState<'food' | 'deals' | 'wealth' | 'gossip'>('wealth')
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -25,9 +25,9 @@ export default function Home() {
         <div className="border-b border-gray-200">
           <nav className="-mb-px flex space-x-8">
             {([
+              { key: 'wealth', label: '暴富' },
               { key: 'food', label: '美食' },
               { key: 'deals', label: '羊毛' },
-              { key: 'wealth', label: '暴富' },
               { key: 'gossip', label: '八卦' }
             ] as const).map((tab) => (
               <button
@@ -46,9 +46,9 @@ export default function Home() {
         </div>
 
         <div className="mt-8">
+          {activeTab === 'wealth' && <WealthTab />}
           {activeTab === 'food' && <FoodTab />}
           {activeTab === 'deals' && <DealsTab />}
-          {activeTab === 'wealth' && <WealthTab />}
           {activeTab === 'gossip' && <GossipTab />}
         </div>
       </div>
@@ -381,10 +381,11 @@ function DealsTab() {
   )
 }
 
-// 暴富 (Wealth) Tab - YouTube stock investment videos
+// 暴富 (Wealth) Tab - YouTube stock investment videos in carousel
 function WealthTab() {
-  const [articles, setArticles] = useState<any[]>([])
+  const [videos, setVideos] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
+  const videoCarouselRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
     fetchWealth()
@@ -396,125 +397,129 @@ function WealthTab() {
       const res = await fetch(`${API_URL}/feeds/wealth`)
       if (res.ok) {
         const data = await res.json()
-        setArticles(data.articles || [])
+        setVideos(data.articles || [])
       } else {
         console.error('Error fetching wealth feed:', res.status, res.statusText)
-        setArticles([])
+        setVideos([])
       }
     } catch (error) {
       console.error('Error fetching wealth feed:', error)
-      setArticles([])
+      setVideos([])
     } finally {
       setLoading(false)
     }
   }
 
-  if (loading) return <div className="text-center py-8">Loading investment videos...</div>
-
-  const renderMedia = (article: any) => {
-    // YouTube video embed
-    if (article.platform === 'youtube' && article.video_id) {
-      const embedUrl = `https://www.youtube.com/embed/${article.video_id}?rel=0`
-      return (
-        <div 
-          className="mb-4 rounded-lg overflow-hidden" 
-          style={{ 
-            position: 'relative', 
-            paddingBottom: '56.25%', 
-            height: 0, 
-            backgroundColor: '#000',
-            minHeight: '315px'
-          }}
-        >
-          <iframe
-            src={embedUrl}
-            title={article.title || 'YouTube video'}
-            frameBorder="0"
-            allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
-            allowFullScreen
-            style={{ 
-              position: 'absolute', 
-              top: 0, 
-              left: 0, 
-              width: '100%', 
-              height: '100%',
-              border: 'none'
-            }}
-          />
-        </div>
-      )
+  const scrollCarousel = (direction: 'left' | 'right') => {
+    if (videoCarouselRef.current) {
+      const scrollAmount = 400
+      const currentScroll = videoCarouselRef.current.scrollLeft
+      const newScroll = direction === 'left' ? currentScroll - scrollAmount : currentScroll + scrollAmount
+      videoCarouselRef.current.scrollLeft = newScroll
     }
-    
-    // Thumbnail image
-    if (article.thumbnail_url) {
-      return (
-        <div className="w-full rounded-t-lg overflow-hidden">
-          <img
-            src={article.thumbnail_url}
-            alt={article.title || 'Video thumbnail'}
-            className="w-full h-48 object-cover"
-            onError={(e) => {
-              e.currentTarget.style.display = 'none'
-            }}
-          />
-        </div>
-      )
-    }
-    
-    return null
   }
 
+  if (loading) return <div className="text-center py-8">Loading investment videos...</div>
+
   return (
-    <div className="space-y-4">
-      {articles.length === 0 ? (
-        <div className="text-center py-8 text-gray-500">
-          暂无内容。后台任务运行后会显示美股投资视频。
-        </div>
-      ) : (
-        <div 
-          style={{ 
-            display: 'grid !important', 
-            gridTemplateColumns: 'repeat(2, 1fr) !important',
-            gap: '1.5rem',
-            width: '100%'
-          }}
-          className="food-grid"
-        >
-          {articles.map((article) => (
-            <div
-              key={article.id}
-              className="bg-white rounded-lg shadow hover:shadow-lg transition overflow-hidden flex flex-col"
+    <div className="space-y-8">
+      {/* Video Carousel Section */}
+      <div>
+        <h2 className="text-2xl font-bold mb-4">热门投资视频</h2>
+        {videos.length === 0 ? (
+          <div className="text-center py-8 text-gray-500">
+            暂无内容。后台任务运行后会显示美股投资视频。
+          </div>
+        ) : (
+          <div className="relative">
+            {/* Left scroll button */}
+            <button
+              onClick={() => scrollCarousel('left')}
+              className="absolute left-0 top-1/2 -translate-y-1/2 z-10 bg-white rounded-full p-2 shadow-lg hover:bg-gray-100 transition"
+              style={{ marginLeft: '-20px' }}
             >
-              {renderMedia(article)}
-              <a
-                href={article.url}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="block p-6 flex-1 flex flex-col"
-              >
-                <div className="flex items-start justify-between mb-2">
-                  <h3 className="text-lg font-semibold flex-1 hover:text-blue-600 line-clamp-2">{article.title}</h3>
-                  {article.platform && (
-                    <span className="ml-2 px-2 py-1 text-xs font-medium rounded flex-shrink-0 bg-red-100 text-red-800">
-                      {article.platform}
-                    </span>
-                  )}
-                </div>
-                <p className="text-gray-600 mb-2 line-clamp-3 flex-1">{article.summary}</p>
-                {article.published_at && (
-                  <div className="text-sm text-gray-500 mt-auto pt-2">
-                    {new Date(article.published_at).toLocaleDateString('zh-CN', {
-                      year: 'numeric',
-                      month: 'long',
-                      day: 'numeric'
-                    })}
+              <svg className="w-6 h-6 text-gray-700" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+              </svg>
+            </button>
+            
+            {/* Right scroll button */}
+            <button
+              onClick={() => scrollCarousel('right')}
+              className="absolute right-0 top-1/2 -translate-y-1/2 z-10 bg-white rounded-full p-2 shadow-lg hover:bg-gray-100 transition"
+              style={{ marginRight: '-20px' }}
+            >
+              <svg className="w-6 h-6 text-gray-700" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+              </svg>
+            </button>
+
+            <div 
+              ref={videoCarouselRef}
+              className="overflow-x-auto pb-4" 
+              style={{ scrollbarWidth: 'none', msOverflowStyle: 'none', WebkitOverflowScrolling: 'touch' }}
+            >
+              <div className="flex space-x-4" style={{ minWidth: 'max-content' }}>
+                {videos.map((video) => (
+                  <div
+                    key={video.id}
+                    className="flex-shrink-0 w-96 bg-white rounded-lg shadow hover:shadow-lg transition overflow-hidden"
+                  >
+                    {video.video_id ? (
+                      <div 
+                        className="rounded-t-lg overflow-hidden" 
+                        style={{ 
+                          position: 'relative', 
+                          paddingBottom: '56.25%', 
+                          height: 0, 
+                          backgroundColor: '#000'
+                        }}
+                      >
+                        <iframe
+                          src={`https://www.youtube.com/embed/${video.video_id}?rel=0`}
+                          title={video.title || 'YouTube video'}
+                          frameBorder="0"
+                          allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+                          allowFullScreen
+                          style={{ 
+                            position: 'absolute', 
+                            top: 0, 
+                            left: 0, 
+                            width: '100%', 
+                            height: '100%',
+                            border: 'none'
+                          }}
+                        />
+                      </div>
+                    ) : video.thumbnail_url ? (
+                      <div className="w-full h-48 overflow-hidden">
+                        <img
+                          src={video.thumbnail_url}
+                          alt={video.title || 'Video thumbnail'}
+                          className="w-full h-full object-cover"
+                        />
+                      </div>
+                    ) : null}
+                    <a
+                      href={video.url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="block p-4"
+                    >
+                      <h3 className="text-sm font-semibold hover:text-blue-600 line-clamp-2 mb-2">{video.title}</h3>
+                      {video.published_at && (
+                        <p className="text-xs text-gray-500">
+                          {new Date(video.published_at).toLocaleDateString('zh-CN')}
+                        </p>
+                      )}
+                    </a>
                   </div>
-                )}
-              </a>
+                ))}
+              </div>
             </div>
-          ))}
-        </div>
-      )}
+          </div>
+        )}
+      </div>
     </div>
   )
 }

@@ -211,27 +211,102 @@ def get_wealth_feed(
 ):
     """
     Get "暴富" (Wealth) feed - latest YouTube videos from US stock investment bloggers
-    Shows videos from the last 24 hours only
+    Only shows videos related to "美股" (US stocks)
+    Prioritizes specific bloggers: 视野环球财经, 美投讲美股, 美投侃新闻, 股市咖啡屋 Stock Cafe, 老李玩钱
     """
     from datetime import timedelta
     import pytz
     
-    # Only show wealth articles from youtube.com, published in the last 24 hours
-    cutoff_time = datetime.now(pytz.UTC) - timedelta(days=1)
+    # Preferred bloggers (in priority order)
+    PREFERRED_BLOGGERS = [
+        "视野环球财经",
+        "美投讲美股",
+        "美投侃新闻",
+        "股市咖啡屋 Stock Cafe",
+        "股市咖啡屋",
+        "老李玩钱"
+    ]
+    
+    # US stock related keywords (must contain at least one)
+    US_STOCK_KEYWORDS = [
+        "美股", "us stock", "us stocks", "美国股票", "美国股市",
+        "nasdaq", "spy", "qqq", "dow", "s&p 500", "s&p500",
+        "aapl", "msft", "googl", "amzn", "meta", "tsla", "nvda",
+        "英伟达", "苹果", "微软", "特斯拉", "亚马逊", "meta",
+        "投资", "股票", "股市", "投资组合", "portfolio"
+    ]
+    
+    # Only show wealth articles from youtube.com, published in the last 7 days
+    cutoff_time = datetime.now(pytz.UTC) - timedelta(days=7)
     
     query = db.query(Article).filter(
         Article.source_type == "wealth",
         Article.url.ilike('%youtube.com%'),
-        Article.published_at >= cutoff_time  # Only last 24 hours
+        Article.published_at >= cutoff_time
     )
     
-    # Sort by freshness (published_at) and relevance (final_score)
+    articles = query.all()
+    
+    # Filter articles: must be related to US stocks
+    def is_us_stock_related(article):
+        title = (article.title or "").lower()
+        summary = (article.summary or "").lower()
+        combined_text = title + " " + summary
+        
+        for keyword in US_STOCK_KEYWORDS:
+            if keyword.lower() in combined_text:
+                return True
+        return False
+    
+    # Filter to only US stock related articles
+    us_stock_articles = [a for a in articles if is_us_stock_related(a)]
+    
+    # Separate articles by preferred bloggers
+    preferred_articles = []
+    other_articles = []
+    
+    for article in us_stock_articles:
+        title = (article.title or "").lower()
+        summary = (article.summary or "").lower()
+        is_preferred = False
+        
+        for blogger in PREFERRED_BLOGGERS:
+            if blogger.lower() in title or blogger.lower() in summary:
+                is_preferred = True
+                break
+        
+        if is_preferred:
+            preferred_articles.append(article)
+        else:
+            other_articles.append(article)
+    
+    # Sort preferred articles by blogger priority, then by freshness
+    def get_blogger_priority(article):
+        title = (article.title or "").lower()
+        summary = (article.summary or "").lower()
+        for idx, blogger in enumerate(PREFERRED_BLOGGERS):
+            if blogger.lower() in title or blogger.lower() in summary:
+                return idx
+        return len(PREFERRED_BLOGGERS)
+    
+    preferred_articles.sort(
+        key=lambda a: (
+            get_blogger_priority(a),
+            -(a.published_at.timestamp() if a.published_at else 0)
+        )
+    )
+    
+    # Sort other articles by freshness and score
     from sqlalchemy import case
-    articles = query.order_by(
-        desc(Article.published_at),  # Most recent first
-        desc(case((Article.video_id.isnot(None), 1), else_=0)),  # Videos first
-        desc(Article.final_score)
-    ).limit(limit).all()
+    other_articles.sort(
+        key=lambda a: (
+        -(a.published_at.timestamp() if a.published_at else 0),
+        -(a.final_score or 0)
+    ))
+    
+    # Combine: preferred first, then others
+    all_articles = preferred_articles + other_articles
+    articles = all_articles[:limit]
     
     # Convert to response format
     article_responses = []

@@ -4,7 +4,7 @@ from contextlib import asynccontextmanager
 import uvicorn
 
 from app.database import engine, Base
-from app.routers import auth, trending, articles, engagement, holdings, portfolio, stocks, coupons, digests
+from app.routers import auth, trending, articles, engagement, holdings, portfolio, stocks, coupons, digests, feeds
 from app.scheduler import start_scheduler, shutdown_scheduler
 
 
@@ -42,6 +42,7 @@ app.include_router(portfolio.router, prefix="/portfolio", tags=["portfolio"])
 app.include_router(stocks.router, prefix="/stocks", tags=["stocks"])
 app.include_router(coupons.router, prefix="/coupons", tags=["coupons"])
 app.include_router(digests.router, prefix="/digests", tags=["digests"])
+app.include_router(feeds.router, prefix="/feeds", tags=["feeds"])
 
 
 @app.get("/")
