@@ -1,9 +1,9 @@
 import { Metadata } from 'next'
 import { TabNavigation } from './components/TabNavigation'
-import { TodayCommandBar } from './components/TodayCommandBar'
-import { TodayBrief } from './components/TodayBrief'
-import { TechRadar } from './components/TechRadar'
-import { HomePortfolioSection, HomeRestaurantSection, HomeDealsSection, HomeGossipSection } from './components/HomeSections'
+import { HomeOverview } from './components/HomeOverview'
+import { FinancialStatusCard } from './components/FinancialStatusCard'
+import { TodayMustDo } from './components/TodayMustDo'
+import { EntryCards } from './components/EntryCards'
 import { SITE_METADATA } from './lib/constants'
 
 export const metadata: Metadata = {
@@ -38,35 +38,19 @@ export default function Home() {
     <div className="min-h-screen bg-gray-50">
       <TabNavigation activeTab="home" />
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 space-y-6">
-        {/* Today Command Bar - Top Priority */}
-        <TodayCommandBar />
-        
-        {/* First Screen: Today Brief + Tech Radar (Desktop: side by side, Mobile: stacked) */}
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-          {/* Today Brief - Card Grid Layout (2/3 width on desktop) */}
-          <div className="lg:col-span-8">
-            <TodayBrief />
-          </div>
-          
-          {/* Tech Radar (1/3 width on desktop) */}
-          <div className="lg:col-span-4">
-            <TechRadar />
-          </div>
-        </div>
+        {/* Layer 1: State (10 seconds scan) */}
+        <HomeOverview />
 
-        {/* Module 2: Portfolio (Collapsible) */}
-        <HomePortfolioSection />
-
-        {/* Module 3: Life Decisions */}
-        <div className="space-y-6">
-          <HomeRestaurantSection cuisineType="chinese" title="今天吃什么？" />
-          <HomeRestaurantSection cuisineType="boba" title="来点冰的甜的！" />
-        </div>
-
-        {/* Module 4: Information Radar */}
+        {/* Layer 2: Decision (30 seconds decide) */}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-          <HomeDealsSection />
-          <HomeGossipSection />
+          <FinancialStatusCard />
+          <TodayMustDo />
+        </div>
+
+        {/* Layer 3: Entry (No lists, only entry cards) */}
+        <div>
+          <h2 className="text-xl font-bold text-gray-900 mb-4">快速入口</h2>
+          <EntryCards />
         </div>
       </div>
     </div>
