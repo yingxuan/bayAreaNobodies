@@ -6,6 +6,7 @@ import { CollapsibleSection } from './CollapsibleSection'
 import { ViewMoreButton } from './ViewMoreButton'
 import { HOME_LIMITS } from '../lib/constants'
 import { generateSlug } from '../lib/slug'
+import { translateDealTitle } from '../lib/i18n'
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'
 
@@ -129,7 +130,7 @@ export function HomeDealsSection() {
             href={`/deals/${deal.source || 'unknown'}/${generateSlug(deal.title || deal.description || '')}-${deal.id}`}
             className="block p-4 border border-gray-200 rounded-lg hover:shadow-md transition-shadow"
           >
-            <h4 className="font-semibold text-gray-900 mb-1 line-clamp-1">{deal.title}</h4>
+            <h4 className="font-semibold text-gray-900 mb-1 line-clamp-1">{translateDealTitle(deal.title || deal.description || '')}</h4>
             <p className="text-sm text-gray-600 line-clamp-2">{deal.description || deal.snippet}</p>
             {deal.category && (
               <span className="inline-block mt-2 px-2 py-1 text-xs bg-blue-50 text-blue-700 rounded">
@@ -245,11 +246,13 @@ export function HomePortfolioSection() {
     )
   }
 
-  const totalValue = portfolioData.total_value || 0
+  // Header: No numbers, only title + hint text (total value already shown in TodayBrief)
+  const summary = "展开查看持仓"
+  
+  // For expanded content, we still need these values
   const dayGain = portfolioData.day_gain || 0
   const dayGainPercent = portfolioData.day_gain_percent || 0
   const gainSign = dayGain >= 0 ? '+' : ''
-  const summary = `💼 我的资产 $${totalValue.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })} | 今日 ${gainSign}$${Math.abs(dayGain).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })} (${gainSign}${Math.abs(dayGainPercent).toFixed(2)}%)`
 
   return (
     <CollapsibleSection
@@ -263,7 +266,7 @@ export function HomePortfolioSection() {
           <div className="bg-gray-50 rounded-lg p-4">
             <div className="text-sm text-gray-600 mb-1">总资产</div>
             <div className="text-xl font-semibold text-gray-900">
-              ${totalValue.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+              ${(portfolioData.total_value || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
             </div>
           </div>
           <div className="bg-gray-50 rounded-lg p-4">

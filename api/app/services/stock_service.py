@@ -84,7 +84,8 @@ def get_stock_price(ticker: str) -> Optional[float]:
 
 def get_stock_daily_trend(ticker: str) -> Tuple[Optional[float], Optional[float]]:
     """
-    Get daily price change and change percent using Yahoo Finance
+    Get daily price change and change percent
+    Priority: Finnhub > yfinance
     
     Returns:
         Tuple of (change_amount, change_percent) or (None, None) if error
@@ -97,40 +98,89 @@ def get_stock_daily_trend(ticker: str) -> Tuple[Optional[float], Optional[float]
         if cached:
             try:
                 data = json.loads(cached)
-                return data.get('change'), data.get('change_percent')
+                cached_change = data.get('change')
+                cached_change_percent = data.get('change_percent')
+                # Only use cache if both values are not None
+                if cached_change is not None and cached_change_percent is not None:
+                    return cached_change, cached_change_percent
             except:
                 pass
     
+    # Priority 1: Try Finnhub first (more reliable)
+    if FINNHUB_API_KEY:
+        try:
+            url = f"https://finnhub.io/api/v1/quote?symbol={ticker.upper()}&token={FINNHUB_API_KEY}"
+            with httpx.Client(timeout=5.0) as client:
+                response = client.get(url)
+                if response.status_code == 200:
+                    data = response.json()
+                    current_price = data.get("c")  # current price
+                    prev_close = data.get("pc")  # previous close
+                    
+                    if current_price is not None and prev_close is not None:
+                        change = float(current_price - prev_close)
+                        change_percent = float((change / prev_close) * 100) if prev_close > 0 else 0.0
+                        
+                        # Cache for 5 minutes
+                        if redis_client:
+                            redis_client.setex(
+                                cache_key,
+                                300,
+                                json.dumps({'change': change, 'change_percent': change_percent})
+                            )
+                        
+                        return change, change_percent
+                    else:
+                        print(f"Finnhub: Missing data for {ticker}, c={current_price}, pc={prev_close}")
+                else:
+                    print(f"Finnhub API error for {ticker}: status={response.status_code}, body={response.text[:100]}")
+        except Exception as e:
+            print(f"Error fetching stock trend from Finnhub for {ticker}: {type(e).__name__}: {e}")
+            import traceback
+            traceback.print_exc()
+    
+    # Priority 2: Fallback to yfinance
     if YFINANCE_AVAILABLE:
         try:
             stock = yf.Ticker(ticker.upper())
-            hist = stock.history(period="2d")  # Get last 2 days to calculate change
             
-            if len(hist) >= 2:
-                # Get today's and yesterday's close prices
-                today_close = hist.iloc[-1]['Close']
-                yesterday_close = hist.iloc[-2]['Close']
+            # Method 1: Try to get current price and previous close
+            current_price = get_stock_price(ticker)
+            if current_price:
+                # Get previous close from info or history
+                try:
+                    info = stock.info
+                    prev_close = info.get('previousClose') or info.get('regularMarketPreviousClose')
+                    if prev_close:
+                        prev_close = float(prev_close)
+                        change = float(current_price - prev_close)
+                        change_percent = float((change / prev_close) * 100) if prev_close > 0 else 0.0
+                        
+                        # Cache for 5 minutes
+                        if redis_client:
+                            redis_client.setex(
+                                cache_key,
+                                300,
+                                json.dumps({'change': change, 'change_percent': change_percent})
+                            )
+                        
+                        return change, change_percent
+                except Exception as e:
+                    print(f"Error getting previous close from info for {ticker}: {e}")
+            
+            # Method 2: Fallback to history data
+            try:
+                hist = stock.history(period="2d")  # Get last 2 days to calculate change
                 
-                change = float(today_close - yesterday_close)
-                change_percent = float((change / yesterday_close) * 100) if yesterday_close > 0 else 0.0
-                
-                # Cache for 5 minutes
-                if redis_client:
-                    redis_client.setex(
-                        cache_key,
-                        300,
-                        json.dumps({'change': change, 'change_percent': change_percent})
-                    )
-                
-                return change, change_percent
-            elif len(hist) == 1:
-                # Only one day of data, use current price vs previous close
-                current_price = get_stock_price(ticker)
-                if current_price:
-                    prev_close = hist.iloc[0]['Close']
-                    change = float(current_price - prev_close)
-                    change_percent = float((change / prev_close) * 100) if prev_close > 0 else 0.0
+                if len(hist) >= 2:
+                    # Get today's and yesterday's close prices
+                    today_close = hist.iloc[-1]['Close']
+                    yesterday_close = hist.iloc[-2]['Close']
                     
+                    change = float(today_close - yesterday_close)
+                    change_percent = float((change / yesterday_close) * 100) if yesterday_close > 0 else 0.0
+                    
+                    # Cache for 5 minutes
                     if redis_client:
                         redis_client.setex(
                             cache_key,
@@ -139,6 +189,24 @@ def get_stock_daily_trend(ticker: str) -> Tuple[Optional[float], Optional[float]
                         )
                     
                     return change, change_percent
+                elif len(hist) == 1:
+                    # Only one day of data, use current price vs previous close
+                    if current_price:
+                        prev_close = hist.iloc[0]['Close']
+                        change = float(current_price - prev_close)
+                        change_percent = float((change / prev_close) * 100) if prev_close > 0 else 0.0
+                        
+                        if redis_client:
+                            redis_client.setex(
+                                cache_key,
+                                300,
+                                json.dumps({'change': change, 'change_percent': change_percent})
+                            )
+                        
+                        return change, change_percent
+            except Exception as e:
+                print(f"Error getting history data for {ticker}: {e}")
+                
         except Exception as e:
             print(f"Error fetching stock trend from yfinance for {ticker}: {e}")
     

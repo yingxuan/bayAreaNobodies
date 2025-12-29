@@ -310,7 +310,7 @@ def get_db_portfolio_summary(db: Session = Depends(get_db)):
                 holding_dict, value, day_gain = future.result()
                 holdings_data.append(holding_dict)
                 total_value += value
-                if day_gain:
+                if day_gain is not None:
                     total_day_gain += day_gain
             except Exception as e:
                 holding = future_to_holding[future]

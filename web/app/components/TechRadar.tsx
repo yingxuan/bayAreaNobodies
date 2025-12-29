@@ -1,4 +1,8 @@
+'use client'
+
+import { useState, useEffect } from 'react'
 import Link from 'next/link'
+import { generateChineseTitle } from '../lib/i18n'
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'
 
@@ -42,32 +46,71 @@ type TechTrendingResponse = {
   items: TechItem[]
 }
 
-async function fetchTechTrending(): Promise<TechTrendingResponse> {
-  try {
-    const res = await fetch(`${API_URL}/tech/trending?source=hn&limit=12`, {
-      next: { revalidate: 600 } // 10 minutes cache
-    })
-    
-    if (res.ok) {
-      return await res.json()
-    }
-  } catch (error) {
-    console.error('Error fetching tech trending:', error)
-  }
-  
-  // Fallback to empty
-  return {
+export function TechRadar() {
+  const [data, setData] = useState<TechTrendingResponse>({
     source: 'hn',
     updatedAt: new Date().toISOString(),
     dataSource: 'mock',
     items: []
-  }
-}
+  })
+  const [loading, setLoading] = useState(true)
 
-export async function TechRadar() {
-  const data = await fetchTechTrending()
+  useEffect(() => {
+    const fetchTechTrending = async () => {
+      setLoading(true)
+      try {
+        const res = await fetch(`${API_URL}/tech/trending?source=hn&limit=12`, {
+          cache: 'no-store',
+          headers: {
+            'Cache-Control': 'no-cache'
+          }
+        })
+        
+        if (res.ok) {
+          const result = await res.json()
+          setData(result)
+        } else {
+          console.error('Failed to fetch tech trending:', res.status)
+        }
+      } catch (error) {
+        console.error('Error fetching tech trending:', error)
+      } finally {
+        setLoading(false)
+      }
+    }
+
+    fetchTechTrending()
+  }, [])
+
   const top3 = data.items.slice(0, 3)
   const rest = data.items.slice(3, 12)
+
+  if (loading) {
+    return (
+      <div className="bg-white rounded-xl shadow-sm p-6 border border-gray-200">
+        <div className="flex items-center justify-between mb-4">
+          <h2 className="text-xl font-bold text-gray-900">🧠 科技圈新动向</h2>
+        </div>
+        <div className="text-center py-8 text-gray-500">加载中...</div>
+      </div>
+    )
+  }
+
+  if (data.items.length === 0) {
+    return (
+      <div className="bg-white rounded-xl shadow-sm p-6 border border-gray-200">
+        <div className="flex items-center justify-between mb-4">
+          <h2 className="text-xl font-bold text-gray-900">🧠 科技圈新动向</h2>
+        </div>
+        <div className="text-center py-8 text-gray-500">
+          <p className="mb-2">暂无数据</p>
+          <Link href="/tech" className="text-sm text-blue-600 hover:text-blue-700">
+            查看科技页面 →
+          </Link>
+        </div>
+      </div>
+    )
+  }
 
   return (
     <div className="bg-white rounded-xl shadow-sm p-6 border border-gray-200">
@@ -97,21 +140,50 @@ export async function TechRadar() {
               className="block p-4 border border-gray-200 rounded-lg hover:shadow-md transition-all"
             >
               <div className="flex items-start justify-between mb-2">
-                <h3 className="font-semibold text-gray-900 line-clamp-2 flex-1">{item.title}</h3>
+                <div className="flex-1 min-w-0">
+                  {(() => {
+                    const titleData = generateChineseTitle(item.title, item.tags)
+                    return (
+                      <>
+                        <h3 className="font-semibold text-gray-900 line-clamp-2">
+                          {titleData.mainTitle}
+                        </h3>
+                        {titleData.originalTitle && titleData.originalTitle !== titleData.mainTitle && (
+                          <p className="text-xs text-gray-500 mt-1 line-clamp-1">
+                            原标题：{titleData.originalTitle}
+                          </p>
+                        )}
+                      </>
+                    )
+                  })()}
+                </div>
                 {item.tags.length > 0 && (
                   <div className="flex gap-1 ml-2 flex-shrink-0">
-                    {item.tags.slice(0, 2).map((tag) => (
-                      <a
-                        key={tag}
-                        href={`/tech/tags/${tag}`}
-                        onClick={(e) => {
-                          e.stopPropagation()
-                        }}
-                        className="px-2 py-0.5 text-xs bg-blue-50 text-blue-700 rounded hover:bg-blue-100 transition-colors"
-                      >
-                        {tag}
-                      </a>
-                    ))}
+                        {item.tags.slice(0, 2).map((tag) => {
+                          const tagMap: Record<string, string> = {
+                            'AI': 'AI',
+                            'Chips': '芯片',
+                            'BigTech': '大厂',
+                            'Infra': '基础设施',
+                            'Security': '安全',
+                            'Career': '职场',
+                            'OpenSource': '开源',
+                            'Tech': '科技',
+                          }
+                          const cnTag = tagMap[tag] || tag
+                          return (
+                            <a
+                              key={tag}
+                              href={`/tech/tags/${tag}`}
+                              onClick={(e) => {
+                                e.stopPropagation()
+                              }}
+                              className="px-2 py-0.5 text-xs bg-blue-50 text-blue-700 rounded hover:bg-blue-100 transition-colors"
+                            >
+                              {cnTag}
+                            </a>
+                          )
+                        })}
                   </div>
                 )}
               </div>
@@ -140,7 +212,23 @@ export async function TechRadar() {
               rel="noopener noreferrer"
               className="block p-3 border border-gray-200 rounded-lg hover:shadow-md transition-all"
             >
-              <h4 className="text-sm font-medium text-gray-900 line-clamp-2 mb-1">{item.title}</h4>
+              <div className="mb-1">
+                {(() => {
+                  const titleData = generateChineseTitle(item.title, item.tags)
+                  return (
+                    <>
+                      <h4 className="text-sm font-medium text-gray-900 line-clamp-2">
+                        {titleData.mainTitle}
+                      </h4>
+                      {titleData.originalTitle && titleData.originalTitle !== titleData.mainTitle && (
+                        <p className="text-xs text-gray-500 mt-0.5 line-clamp-1">
+                          原标题：{titleData.originalTitle}
+                        </p>
+                      )}
+                    </>
+                  )
+                })()}
+              </div>
               <div className="flex items-center gap-2 text-xs text-gray-500">
                 {item.score !== undefined && (
                   <span>🔥 {item.score}</span>
@@ -165,21 +253,50 @@ export async function TechRadar() {
             className="block p-4 border border-gray-200 rounded-lg hover:shadow-md transition-all"
           >
             <div className="flex items-start justify-between mb-2">
-              <h3 className="font-semibold text-gray-900 line-clamp-2 flex-1">{item.title}</h3>
+              <div className="flex-1 min-w-0">
+                {(() => {
+                  const titleData = generateChineseTitle(item.title, item.tags)
+                  return (
+                    <>
+                      <h3 className="font-semibold text-gray-900 line-clamp-2">
+                        {titleData.mainTitle}
+                      </h3>
+                      {titleData.originalTitle && titleData.originalTitle !== titleData.mainTitle && (
+                        <p className="text-xs text-gray-500 mt-1 line-clamp-1">
+                          原标题：{titleData.originalTitle}
+                        </p>
+                      )}
+                    </>
+                  )
+                })()}
+              </div>
               {item.tags.length > 0 && (
                 <div className="flex gap-1 ml-2 flex-shrink-0">
-                  {item.tags.slice(0, 2).map((tag) => (
-                    <a
-                      key={tag}
-                      href={`/tech/tags/${tag}`}
-                      onClick={(e) => {
-                        e.stopPropagation()
-                      }}
-                      className="px-2 py-0.5 text-xs bg-blue-50 text-blue-700 rounded hover:bg-blue-100 transition-colors"
-                    >
-                      {tag}
-                    </a>
-                  ))}
+                        {item.tags.slice(0, 2).map((tag) => {
+                          const tagMap: Record<string, string> = {
+                            'AI': 'AI',
+                            'Chips': '芯片',
+                            'BigTech': '大厂',
+                            'Infra': '基础设施',
+                            'Security': '安全',
+                            'Career': '职场',
+                            'OpenSource': '开源',
+                            'Tech': '科技',
+                          }
+                          const cnTag = tagMap[tag] || tag
+                          return (
+                            <a
+                              key={tag}
+                              href={`/tech/tags/${tag}`}
+                              onClick={(e) => {
+                                e.stopPropagation()
+                              }}
+                              className="px-2 py-0.5 text-xs bg-blue-50 text-blue-700 rounded hover:bg-blue-100 transition-colors"
+                            >
+                              {cnTag}
+                            </a>
+                          )
+                        })}
                 </div>
               )}
             </div>

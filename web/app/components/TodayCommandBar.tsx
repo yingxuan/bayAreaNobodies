@@ -83,7 +83,7 @@ export function TodayCommandBar() {
   return (
     <div className="bg-white rounded-xl shadow-sm p-4 md:p-6 mb-6">
       <div className="mb-3 flex items-center justify-between">
-        <h2 className="text-sm font-semibold text-gray-500 uppercase tracking-wide">Today Command Bar</h2>
+        <h2 className="text-sm font-semibold text-gray-500 uppercase tracking-wide">今日指标</h2>
         {hasMockData && (
           <span className="text-xs text-yellow-600 px-2 py-1 bg-yellow-50 rounded" title="部分数据为模拟数据">
             Mock

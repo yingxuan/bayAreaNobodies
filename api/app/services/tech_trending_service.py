@@ -10,6 +10,15 @@ from typing import Dict, List, Optional
 from datetime import datetime, timedelta
 import pytz
 
+# Optional imports for translation
+try:
+    import google.generativeai as genai
+    GEMINI_AVAILABLE = True
+except ImportError:
+    GEMINI_AVAILABLE = False
+
+GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
+
 REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379/0")
 redis_client = redis.from_url(REDIS_URL, decode_responses=True) if REDIS_URL else None
 
@@ -42,6 +51,52 @@ def release_lock():
         redis_client.delete(LOCK_KEY)
 
 
+def translate_title_to_chinese(title: str) -> str:
+    """
+    Translate English title to Chinese using Gemini (if available)
+    Falls back to original if translation fails
+    """
+    # Simple check: if title contains mostly Chinese characters, return as-is
+    chinese_char_count = sum(1 for char in title if '\u4e00' <= char <= '\u9fff')
+    if chinese_char_count > len(title) * 0.3:  # More than 30% Chinese chars
+        return title
+    
+    # If Gemini is available, try to translate
+    if GEMINI_API_KEY and GEMINI_AVAILABLE:
+        try:
+            genai.configure(api_key=GEMINI_API_KEY)
+            model = genai.GenerativeModel('gemini-pro')
+            
+            prompt = f"""请将以下英文科技新闻标题翻译成中文，保留公司名和技术术语的英文（如 OpenAI、GPT、NVIDIA），只翻译其他部分：
+
+标题：{title}
+
+只返回翻译后的中文标题，不要其他文字。"""
+            
+            response = model.generate_content(
+                prompt,
+                generation_config={
+                    "temperature": 0.3,
+                    "max_output_tokens": 100,
+                }
+            )
+            
+            translated = response.text.strip()
+            # Remove quotes if present
+            if translated.startswith('"') and translated.endswith('"'):
+                translated = translated[1:-1]
+            if translated.startswith("'") and translated.endswith("'"):
+                translated = translated[1:-1]
+            
+            if translated and len(translated) > 0:
+                return translated
+        except Exception as e:
+            print(f"Translation error for title '{title}': {e}")
+    
+    # Fallback: return original title (frontend will handle display)
+    return title
+
+
 def generate_tags(title: str, url: str = "") -> List[str]:
     """
     Generate deterministic tags based on title and URL keywords
@@ -61,39 +116,39 @@ def generate_tags(title: str, url: str = "") -> List[str]:
     # Chips (semiconductor)
     chip_keywords = ['nvidia', 'cuda', 'gpu', 'chip', 'silicon', 'nvda', 'amd', 'intel', 'semiconductor', 'tsmc', 'qualcomm']
     if any(kw in combined_text for kw in chip_keywords):
-        tags.append('Chips')
+        tags.append('芯片')
     
     # BigTech (major tech companies)
     bigtech_keywords = ['meta', 'google', 'apple', 'microsoft', 'amazon', 'tesla', 'facebook', 'netflix', 'uber', 'airbnb']
     if any(kw in combined_text for kw in bigtech_keywords):
-        tags.append('BigTech')
+        tags.append('大厂')
     
     # Career (job-related)
     career_keywords = ['layoffs', 'hiring', 'interview', 'career', 'job', 'salary', 'h1b', 'green card', 'immigration', 'resume', 'linkedin', 'pip', 'fired']
     if any(kw in combined_text for kw in career_keywords):
-        tags.append('Career')
+        tags.append('职场')
     
     # OpenSource
     opensource_keywords = ['open-source', 'opensource', 'github', 'repo', 'license', 'apache', 'mit license', 'gpl', 'agpl', 'contributor']
     if any(kw in combined_text for kw in opensource_keywords):
-        tags.append('OpenSource')
+        tags.append('开源')
     
     # Security
     security_keywords = ['security', 'exploit', 'vuln', 'cve', 'hack', 'breach', 'vulnerability', 'cyber', 'ransomware', 'malware']
     if any(kw in combined_text for kw in security_keywords):
-        tags.append('Security')
+        tags.append('安全')
     
     # Infrastructure (lowest priority, catch-all for tech infra)
     infra_keywords = ['infra', 'kubernetes', 'postgres', 'redis', 'latency', 'aws', 'cloud', 'docker', 'devops', 'sre', 'database', 'scalability']
     if any(kw in combined_text for kw in infra_keywords):
-        tags.append('Infra')
+        tags.append('基础设施')
     
     # Default to Tech if no tags matched
     if not tags:
-        tags.append('Tech')
+        tags.append('科技')
     
     # Return max 2-3 tags (prioritize AI, Chips, BigTech, Career)
-    priority_order = ['AI', 'Chips', 'BigTech', 'Career', 'OpenSource', 'Security', 'Infra', 'Tech']
+    priority_order = ['AI', '芯片', '大厂', '职场', '开源', '安全', '基础设施', '科技']
     sorted_tags = sorted(tags, key=lambda t: priority_order.index(t) if t in priority_order else 999)
     return sorted_tags[:3]
 
@@ -154,9 +209,13 @@ def fetch_hn_stories(limit: int = 12) -> List[Dict]:
                 tags = generate_tags(title, url)
                 summary = generate_summary(title, url)
                 
+                # Translate title to Chinese if needed
+                title_cn = translate_title_to_chinese(title)
+                
                 story = {
                     "id": f"hn_{story_id}",
-                    "title": title,
+                    "title": title,  # Original English title
+                    "title_cn": title_cn,  # Chinese translation (may be same as title if already Chinese)
                     "url": url,
                     "score": points,
                     "comments": num_comments,
