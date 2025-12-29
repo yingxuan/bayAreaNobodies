@@ -10,7 +10,8 @@ router = APIRouter()
 @router.get("/snapshot")
 def get_market_snapshot():
     """
-    Get unified market snapshot with all 5 banner KPIs:
+    Get unified market snapshot with all banner KPIs:
+    - S&P 500 price with 24h change
     - Gold price (USD per oz) with 24h change
     - BTC price (USD) with 24h change
     - Powerball jackpot (USD) with draw date
@@ -19,6 +20,7 @@ def get_market_snapshot():
     
     Returns cached data with 15-minute TTL for full snapshot.
     Per-field TTLs:
+    - S&P 500: 5 minutes
     - BTC/Gold: 10 minutes
     - Mortgage: 12 hours
     - Lottery: 30 minutes

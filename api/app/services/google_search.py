@@ -12,7 +12,7 @@ GOOGLE_CSE_ID = os.getenv("GOOGLE_CSE_ID", "")
 
 GOOGLE_CSE_ENDPOINT = os.getenv("GOOGLE_CSE_ENDPOINT", "https://www.googleapis.com/customsearch/v1")
 REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379/0")
-DAILY_CSE_BUDGET = int(os.getenv("DAILY_CSE_BUDGET", "80"))
+DAILY_CSE_BUDGET = int(os.getenv("DAILY_CSE_BUDGET", "10000"))
 
 redis_client = redis.from_url(REDIS_URL, decode_responses=True) if REDIS_URL else None
 

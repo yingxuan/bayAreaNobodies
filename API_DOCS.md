@@ -38,10 +38,17 @@ curl http://localhost:8000/market/snapshot
     "ttlSeconds": 600
   },
   "gold": {
-    "price": 2650,
+    "price": 2650.1,
     "chgPct24h": 0.2,
+    "sourceUrl": "https://finnhub.io",
     "stale": false,
     "ttlSeconds": 600
+  },
+  "sp500": {
+    "price": 5234.56,
+    "chgPct24h": 0.15,
+    "stale": false,
+    "ttlSeconds": 300
   },
   "mortgage30y": {
     "rate": 6.5,
@@ -51,8 +58,9 @@ curl http://localhost:8000/market/snapshot
   },
   "lottery": {
     "game": "Powerball",
-    "jackpot": 33000000,
-    "drawDate": "2025-01-15",
+    "jackpot": 1080000000,
+    "drawDate": "2026-01-06",
+    "sourceUrl": "https://powerball.com",
     "stale": false,
     "ttlSeconds": 1800
   }
@@ -61,22 +69,33 @@ curl http://localhost:8000/market/snapshot
 
 **字段说明：**
 - `updatedAt`: ISO 8601 格式的时间戳，表示整个快照的更新时间（所有字段共享同一时间点）
-- `dataSource`: 每个字段的数据源状态（`live` = 实时数据，`mock` = 模拟/缓存数据）
+- `dataSource`: 每个字段的数据源状态（`live` = 实时数据，`google_cse` = Google CSE 抓取，`mock` = 模拟/缓存数据）
 - `stale`: 布尔值，`true` 表示使用了缓存或占位数据（整体快照级别）
 - `ttlSeconds`: 缓存 TTL（秒），整体快照和每个字段都有独立的 TTL
-- `chgPct24h`: 24小时变化百分比（仅 BTC 和 Gold）
+- `chgPct24h`: 24小时变化百分比（仅 BTC、Gold、S&P 500）
+- `sourceUrl`: 数据来源 URL（Gold 和 Lottery 字段）
+- `drawDate`: 下次开奖日期（YYYY-MM-DD 格式，仅 Lottery 字段）
 
 **缓存策略：**
 - 整体快照：15 分钟 TTL
 - 字段级缓存（last-known-good）：
+  - S&P 500: 5 分钟
   - BTC: 10 分钟
   - Gold: 10 分钟
   - Mortgage: 12 小时
   - Lottery: 30 分钟
 
+**数据源优先级：**
+- **Gold**: Finnhub API → yfinance → Google CSE → last-known-good → mock
+- **Powerball**: Google CSE（多查询策略，信任域名加权）→ last-known-good → mock
+- **BTC**: Finnhub API → yfinance → crypto_service → last-known-good → mock
+- **S&P 500**: yfinance (^GSPC) → Finnhub (SPY) → last-known-good → mock
+
 **降级策略：**
 - 如果外部 API 失败，使用 last-known-good 缓存值（标记为 `stale: true`）
 - 如果无缓存，返回占位数据（标记为 `dataSource: "mock"` 和 `stale: true`）
+- 所有异常不会抛出 500 错误，而是返回 mock/placeholder 数据
+- 使用 Redis 锁（30秒）防止缓存击穿
 
 ---
 
@@ -136,6 +155,14 @@ curl "http://localhost:8000/tech/trending?source=hn&limit=12"
 
 - `REDIS_URL`: Redis 连接 URL（可选，默认: `redis://localhost:6379/0`）
 - `NEXT_PUBLIC_API_URL`: 前端 API 基础 URL（默认: `http://localhost:8000`）
+- `GOOGLE_CSE_API_KEY`: Google Custom Search API Key（用于 Powerball 和 Gold 的 CSE fallback）
+- `GOOGLE_CSE_ID`: Google Custom Search Engine ID（CX）
+- `DAILY_CSE_BUDGET`: 每日 CSE 配额限制（默认: 10000）
+- `FINNHUB_API_KEY`: Finnhub API Key（用于 Gold、BTC、S&P 500 的实时数据）
+- `GOOGLE_CSE_API_KEY`: Google Custom Search API Key（用于 Powerball 和 Gold 的 CSE fallback）
+- `GOOGLE_CSE_ID`: Google Custom Search Engine ID（CX）
+- `DAILY_CSE_BUDGET`: 每日 CSE 配额限制（默认: 10000）
+- `FINNHUB_API_KEY`: Finnhub API Key（用于 Gold、BTC、S&P 500 的实时数据）
 
 ## 注意事项
 

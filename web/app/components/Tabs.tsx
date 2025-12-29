@@ -684,6 +684,15 @@ export function WealthTab() {
     loadPortfolio()
     fetchHighOffers()
     fetchMarketSnapshot()
+    
+    // Refresh market snapshot every 5 minutes
+    const marketInterval = setInterval(() => {
+      fetchMarketSnapshot()
+    }, 5 * 60 * 1000) // 5 minutes
+    
+    return () => {
+      clearInterval(marketInterval)
+    }
   }, [])
 
   useEffect(() => {
@@ -1020,7 +1029,15 @@ export function WealthTab() {
   const fetchMarketSnapshot = async () => {
     setMarketLoading(true)
     try {
-      const res = await fetch(`${API_URL}/market/snapshot`)
+      // Use cache: 'no-store' to always get fresh data, add timestamp to bypass cache
+      const timestamp = new Date().getTime()
+      const res = await fetch(`${API_URL}/market/snapshot?t=${timestamp}`, {
+        cache: 'no-store',
+        headers: {
+          'Cache-Control': 'no-cache',
+          'Pragma': 'no-cache'
+        }
+      })
       if (res.ok) {
         const data = await res.json()
         setMarketSnapshot(data)
@@ -1065,7 +1082,7 @@ export function WealthTab() {
                 <div className="text-sm text-gray-500">加载中...</div>
               ) : marketSnapshot ? (
                 <div className="text-lg font-bold text-yellow-400">
-                  ${(marketSnapshot.gold_usd_per_oz || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                  ${((marketSnapshot.gold?.price || marketSnapshot.gold_usd_per_oz) || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                 </div>
               ) : (
                 <div className="text-sm text-gray-500">N/A</div>
@@ -1089,7 +1106,7 @@ export function WealthTab() {
                 <div className="text-sm text-gray-500">加载中...</div>
               ) : marketSnapshot ? (
                 <div className="text-lg font-bold text-red-400">
-                  {formatPowerballJackpot(marketSnapshot.powerball_jackpot_usd || 0)}
+                  {formatPowerballJackpot((marketSnapshot.lottery?.jackpot || marketSnapshot.powerball_jackpot_usd) || 0)}
                 </div>
               ) : (
                 <div className="text-sm text-gray-500">N/A</div>
@@ -1113,7 +1130,7 @@ export function WealthTab() {
                 <div className="text-sm text-gray-500">加载中...</div>
               ) : marketSnapshot ? (
                 <div className="text-lg font-bold text-orange-400">
-                  ${(marketSnapshot.btc_usd || 0).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
+                  ${((marketSnapshot.btc?.price || marketSnapshot.btc_usd) || 0).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
                 </div>
               ) : (
                 <div className="text-sm text-gray-500">N/A</div>
@@ -1138,7 +1155,7 @@ export function WealthTab() {
                 <div className="text-sm text-gray-500">加载中...</div>
               ) : marketSnapshot ? (
                 <div className="text-lg font-bold text-blue-400">
-                  {(marketSnapshot.ca_jumbo_7_1_arm_rate || 0).toFixed(2)}%
+                  {((marketSnapshot.mortgage30y?.rate || marketSnapshot.ca_jumbo_7_1_arm_rate) || 0).toFixed(2)}%
                 </div>
               ) : (
                 <div className="text-sm text-gray-500">N/A</div>

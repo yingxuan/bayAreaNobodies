@@ -54,6 +54,15 @@ export function TodayCommandBar() {
     }
     
     loadTopics()
+    
+    // Refresh hot topics every 5 minutes to get latest market data
+    const refreshInterval = setInterval(() => {
+      loadTopics()
+    }, 5 * 60 * 1000) // 5 minutes
+    
+    return () => {
+      clearInterval(refreshInterval)
+    }
   }, [])
 
   if (loading) {
