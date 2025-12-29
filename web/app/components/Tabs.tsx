@@ -962,7 +962,7 @@ export function WealthTab() {
     }).join(' ')
     
     // Create area fill path
-    const areaPath = `M ${padding},${height - padding} L ${points.split(' ').map((p, i) => {
+    const areaPath = `M ${padding},${height - padding} L ${points.split(' ').map((p: string, i: number) => {
       if (i === 0) return p.split(',')[0]
       return p
     }).join(' L ')} L ${width - padding},${height - padding} Z`

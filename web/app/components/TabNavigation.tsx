@@ -8,7 +8,8 @@ export function TabNavigation({ activeTab }: { activeTab: string }) {
     { key: 'wealth', label: '暴富', path: '/wealth' },
     { key: 'food', label: '美食', path: '/food' },
     { key: 'deals', label: '羊毛', path: '/deals' },
-    { key: 'gossip', label: '八卦', path: '/gossip' }
+    { key: 'gossip', label: '八卦', path: '/gossip' },
+    { key: 'tech', label: '科技', path: '/tech' }
   ]
 
   return (

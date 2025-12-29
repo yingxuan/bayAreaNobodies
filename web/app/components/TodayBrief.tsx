@@ -5,6 +5,7 @@ import Link from 'next/link'
 import { BriefItemCard } from './BriefItemCard'
 import { generateSlug } from '../lib/slug'
 import { DailyBriefItem, DailyBrief } from '../lib/dailyBrief'
+import { getTechItems } from '../lib/techNews'
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'
 
@@ -17,6 +18,7 @@ export function TodayBrief() {
   }, [])
 
   const fetchBrief = async () => {
+    // Note: getTechItems is async, but we'll handle it in the items building section
     setLoading(true)
     try {
       // Fetch all data sources in parallel
@@ -36,7 +38,7 @@ export function TodayBrief() {
       // Build brief items
       const items: DailyBriefItem[] = []
 
-      // 1. Portfolio
+      // 1. Portfolio (Large Card - First Row)
       if (portfolioData) {
         const totalValue = portfolioData.total_value || 0
         const dayGain = portfolioData.day_gain || 0
@@ -48,24 +50,35 @@ export function TodayBrief() {
           icon: '💰',
           title: '市场 & 我的钱',
           summary: `总资产 $${totalValue.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })} | 今日 ${gainSign}$${Math.abs(dayGain).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })} (${gainSign}${Math.abs(dayGainPercent || 0).toFixed(2)}%)`,
-          ctaText: '查看持仓',
+          ctaText: '查看资产',
           href: '/wealth',
-          tags: dayGain >= 0 ? ['上涨'] : ['下跌']
+          tags: dayGain >= 0 ? ['📈 上涨'] : ['📉 下跌']
         })
       } else {
-        // Fallback
         items.push({
-          id: 'portfolio',
+          id: 'portfolio-fallback',
           type: 'portfolio',
           icon: '💰',
           title: '市场 & 我的钱',
           summary: '加载中...',
-          ctaText: '查看持仓',
+          ctaText: '查看资产',
           href: '/wealth'
         })
       }
+      
+      // 2. Hot Financial Topic (Large Card - First Row)
+      items.push({
+        id: 'hot-financial',
+        type: 'alert',
+        icon: '🔥',
+        title: '热点金融',
+        summary: '查看实时市场数据：黄金、BTC、利率、彩票',
+        ctaText: '查看市场',
+        href: '/wealth',
+        tags: ['实时']
+      })
 
-      // 2. Food
+      // 3. Food (Small Card - Second Row)
       if (foodData?.restaurants?.[0]) {
         const restaurant = foodData.restaurants[0]
         items.push({
@@ -73,9 +86,9 @@ export function TodayBrief() {
           type: 'food',
           icon: '🍜',
           title: '今天吃什么',
-          summary: `${restaurant.name} | ${restaurant.rating ? `⭐ ${restaurant.rating}` : ''} | ${restaurant.address?.split(',')[0] || ''}`,
-          ctaText: '查看详情',
-          href: `/city/cupertino`, // Link to city page instead
+          summary: `${restaurant.name} | ${restaurant.rating ? `⭐ ${restaurant.rating}` : ''}`,
+          ctaText: '查看餐厅',
+          href: `/city/cupertino`,
           tags: restaurant.rating ? [`${restaurant.rating}分`] : []
         })
       } else {
@@ -85,12 +98,12 @@ export function TodayBrief() {
           icon: '🍜',
           title: '今天吃什么',
           summary: '暂无推荐',
-          ctaText: '查看更多',
+          ctaText: '查看餐厅',
           href: '/food'
         })
       }
 
-      // 3. Deal
+      // 4. Deal (Small Card - Second Row)
       if (dealsData?.coupons?.[0]) {
         const deal = dealsData.coupons[0]
         items.push({
@@ -99,7 +112,7 @@ export function TodayBrief() {
           icon: '🛍',
           title: '今日羊毛',
           summary: deal.title || deal.description || '最新优惠',
-          ctaText: '查看详情',
+          ctaText: '查看羊毛',
           href: `/deals/${deal.source || 'unknown'}/${generateSlug(deal.title || deal.description || '')}-${deal.id}`,
           tags: [
             ...(deal.category ? [deal.category] : []),
@@ -114,30 +127,29 @@ export function TodayBrief() {
           icon: '🛍',
           title: '今日羊毛',
           summary: '暂无新羊毛',
-          ctaText: '查看更多',
+          ctaText: '查看羊毛',
           href: '/deals'
         })
       }
 
-      // 4. Gossip/Post
+      // 5. Gossip/Post (Small Card - Second Row)
       if (gossipData?.articles?.[0]) {
         const article = gossipData.articles[0]
-        // Generate TL;DR bullets from snippet or title
         const snippet = article.snippet || article.summary || article.title || ''
-        const bullets = snippet.length > 100 
-          ? [snippet.substring(0, 100) + '...']
-          : [snippet]
+        const bullets = snippet.length > 80 
+          ? snippet.substring(0, 80) + '...'
+          : snippet
         
         items.push({
           id: `post-${article.id}`,
           type: 'post',
           icon: '🗣',
           title: '今日热帖',
-          summary: bullets.join(' | '),
-          ctaText: '查看详情',
+          summary: bullets,
+          ctaText: '查看热帖',
           href: `/posts/${article.source || 'unknown'}/${generateSlug(article.title || '')}-${article.id}`,
           tags: [
-            ...(article.tags ? (Array.isArray(article.tags) ? article.tags.slice(0, 2) : []) : []),
+            ...(article.tags ? (Array.isArray(article.tags) ? article.tags.slice(0, 1) : []) : []),
             ...(article.gossip_score && article.gossip_score > 0.8 ? ['🔥热门'] : [])
           ]
         })
@@ -148,25 +160,67 @@ export function TodayBrief() {
           icon: '🗣',
           title: '今日热帖',
           summary: '暂无热帖',
-          ctaText: '查看更多',
+          ctaText: '查看热帖',
           href: '/gossip'
         })
       }
 
-      // 5. Alert (mock for now) - Always ensure we have 5 items
+      // 6. Tech News (Small Card - Second Row)
+      try {
+        const techItems = await getTechItems(1)
+        if (techItems.length > 0) {
+          const techItem = techItems[0]
+          items.push({
+            id: `tech-${techItem.id}`,
+            type: 'alert',
+            icon: '🧠',
+            title: '科技圈新动向',
+            summary: `${techItem.title} | ${techItem.what}`,
+            ctaText: '查看详情',
+            href: `/tech/${techItem.slug}`,
+            tags: [
+              ...techItem.tags.slice(0, 1),
+              ...(techItem.isBreaking ? ['🔥突发'] : [])
+            ]
+          })
+        } else {
+          items.push({
+            id: 'tech-fallback',
+            type: 'alert',
+            icon: '🧠',
+            title: '科技圈新动向',
+            summary: '暂无新动向',
+            ctaText: '查看全部',
+            href: '/tech'
+          })
+        }
+      } catch (error) {
+        console.error('Error fetching tech news:', error)
+        items.push({
+          id: 'tech-fallback',
+          type: 'alert',
+          icon: '🧠',
+          title: '科技圈新动向',
+          summary: '加载中...',
+          ctaText: '查看全部',
+          href: '/tech'
+        })
+      }
+
+      // 7. Alert (Small Card - Second Row)
       items.push({
         id: 'alert',
         type: 'alert',
         icon: '⚠️',
         title: '风险提醒',
         summary: '今日无重要提醒',
-        ctaText: '查看详情',
+        ctaText: '查看提醒',
         href: '#',
         tags: ['正常']
       })
 
-      // Ensure we always have exactly 5 items (fill with mock if needed)
-      while (items.length < 5) {
+      // Ensure we have at least 7 items (2 large + 5 small minimum)
+      while (items.length < 7) {
         items.push({
           id: `fallback-${items.length}`,
           type: 'alert',
@@ -212,15 +266,26 @@ export function TodayBrief() {
         <h1 className="text-2xl md:text-3xl font-bold text-gray-900 mb-2">
           Today · 湾区码农简报
         </h1>
-        <p className="text-gray-600">
+        <p className="text-sm text-gray-500">
           {brief.location} · {new Date(brief.dateISO).toLocaleDateString('zh-CN', { month: 'long', day: 'numeric' })} · {new Date(brief.dateISO).toLocaleDateString('zh-CN', { weekday: 'long' }).replace(/星期/g, '周')}
         </p>
       </div>
 
+      {/* Card Grid Layout: First row 2 large cards, second row 3-4 small cards */}
       <div className="space-y-4">
-        {brief.items.map((item) => (
-          <BriefItemCard key={item.id} item={item} />
-        ))}
+        {/* First Row: 2 Large Cards (Market/Portfolio + Hot Financial) */}
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          {brief.items.slice(0, 2).map((item) => (
+            <BriefItemCard key={item.id} item={item} size="large" />
+          ))}
+        </div>
+        
+        {/* Second Row: 5 Small Cards (Food / Deal / Post / Tech / Alert) */}
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4">
+          {brief.items.slice(2).map((item) => (
+            <BriefItemCard key={item.id} item={item} size="small" />
+          ))}
+        </div>
       </div>
     </div>
   )

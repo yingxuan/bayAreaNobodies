@@ -1,8 +1,8 @@
 import { Metadata } from 'next'
 import { notFound } from 'next/navigation'
 import Link from 'next/link'
-import { SITE_METADATA } from '../../lib/constants'
-import { generateSlug } from '../../lib/slug'
+import { SITE_METADATA } from '../../../lib/constants'
+import { generateSlug } from '../../../lib/slug'
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'
 

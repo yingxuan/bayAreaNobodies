@@ -3,18 +3,31 @@
 import Link from 'next/link'
 import { DailyBriefItem } from '../lib/dailyBrief'
 
-export function BriefItemCard({ item }: { item: DailyBriefItem }) {
+interface BriefItemCardProps {
+  item: DailyBriefItem
+  size?: 'large' | 'small'
+}
+
+export function BriefItemCard({ item, size = 'small' }: BriefItemCardProps) {
+  const isLarge = size === 'large'
+  
   return (
-    <div className="border border-gray-200 rounded-lg p-4 hover:shadow-md transition-shadow">
-      <div className="flex items-start gap-4">
-        <div className="text-2xl flex-shrink-0">{item.icon}</div>
+    <Link
+      href={item.href}
+      className={`block border border-gray-200 rounded-lg hover:shadow-md transition-all ${
+        isLarge ? 'p-6 md:p-8' : 'p-4'
+      }`}
+    >
+      <div className={`flex items-start gap-${isLarge ? '4' : '3'}`}>
+        <div className={`flex-shrink-0 ${isLarge ? 'text-3xl' : 'text-2xl'}`}>{item.icon}</div>
         <div className="flex-1 min-w-0">
-          <div className="flex items-center gap-2 mb-1">
-            <h3 className="font-semibold text-gray-900">{item.title}</h3>
+          <div className={`flex items-center gap-2 mb-${isLarge ? '2' : '1'} flex-wrap`}>
+            <h3 className={`font-semibold text-gray-900 ${isLarge ? 'text-lg' : 'text-base'}`}>
+              {item.title}
+            </h3>
             {item.tags && item.tags.length > 0 && (
               <div className="flex gap-1 flex-wrap">
                 {item.tags.map((tag, idx) => {
-                  // Special styling for certain tags
                   const isSpecialTag = tag.includes('✅') || tag.includes('🧪') || tag.includes('⚠️') || tag.includes('🔥')
                   return (
                     <span
@@ -32,16 +45,15 @@ export function BriefItemCard({ item }: { item: DailyBriefItem }) {
               </div>
             )}
           </div>
-          <p className="text-sm text-gray-600 mb-3 line-clamp-2">{item.summary}</p>
-          <Link
-            href={item.href}
-            className="inline-block px-4 py-2 text-sm font-medium text-blue-600 bg-blue-50 rounded-md hover:bg-blue-100 transition-colors"
-          >
+          <p className={`text-gray-600 mb-3 ${isLarge ? 'text-base line-clamp-3' : 'text-sm line-clamp-2'}`}>
+            {item.summary}
+          </p>
+          <span className={`inline-block font-medium text-blue-600 ${isLarge ? 'text-base' : 'text-sm'}`}>
             {item.ctaText} →
-          </Link>
+          </span>
         </div>
       </div>
-    </div>
+    </Link>
   )
 }
 

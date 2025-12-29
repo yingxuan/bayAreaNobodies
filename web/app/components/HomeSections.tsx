@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect } from 'react'
 import Link from 'next/link'
 import { CollapsibleSection } from './CollapsibleSection'
 import { ViewMoreButton } from './ViewMoreButton'
@@ -9,11 +9,10 @@ import { generateSlug } from '../lib/slug'
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'
 
-// Lightweight Restaurant Carousel (4 items only)
+// Lightweight Restaurant Grid (4 items only, fixed height)
 export function HomeRestaurantSection({ cuisineType, title }: { cuisineType: string, title: string }) {
   const [restaurants, setRestaurants] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
-  const scrollRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
     fetchRestaurants()
@@ -35,15 +34,6 @@ export function HomeRestaurantSection({ cuisineType, title }: { cuisineType: str
     }
   }
 
-  const scroll = (direction: 'left' | 'right') => {
-    if (scrollRef.current) {
-      scrollRef.current.scrollBy({
-        left: direction === 'left' ? -300 : 300,
-        behavior: 'smooth'
-      })
-    }
-  }
-
   if (loading) {
     return (
       <div className="bg-white rounded-xl shadow-sm p-6">
@@ -59,52 +49,34 @@ export function HomeRestaurantSection({ cuisineType, title }: { cuisineType: str
         <h3 className="text-xl font-bold">{title}</h3>
         <ViewMoreButton href="/food" />
       </div>
-      <div className="relative">
-        <div className="flex gap-4 overflow-x-auto scrollbar-hide pb-4" ref={scrollRef}>
-          {restaurants.map((restaurant) => (
-            <Link
-              key={restaurant.id}
-              href={`/eat/cupertino/${generateSlug(restaurant.name || '')}-${restaurant.id}`}
-              className="flex-shrink-0 w-64 bg-gray-50 rounded-lg overflow-hidden hover:shadow-md transition-shadow"
-            >
-              {restaurant.photo_url && (
-                <img
-                  src={restaurant.photo_url}
-                  alt={restaurant.name}
-                  className="w-full h-40 object-cover"
-                />
-              )}
-              <div className="p-4">
-                <h4 className="font-semibold text-gray-900 mb-1 line-clamp-1">{restaurant.name}</h4>
-                <p className="text-sm text-gray-600 mb-2 line-clamp-1">{restaurant.address}</p>
-                <div className="flex items-center gap-2">
-                  {restaurant.rating && (
-                    <span className="text-sm text-yellow-600">⭐ {restaurant.rating}</span>
-                  )}
-                  {restaurant.user_ratings_total && (
-                    <span className="text-xs text-gray-500">({restaurant.user_ratings_total})</span>
-                  )}
-                </div>
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+        {restaurants.map((restaurant) => (
+          <Link
+            key={restaurant.id}
+            href={`/eat/cupertino/${generateSlug(restaurant.name || '')}-${restaurant.id}`}
+            className="bg-gray-50 rounded-lg overflow-hidden hover:shadow-md transition-shadow h-full flex flex-col"
+          >
+            {restaurant.photo_url && (
+              <img
+                src={restaurant.photo_url}
+                alt={restaurant.name}
+                className="w-full h-40 object-cover"
+              />
+            )}
+            <div className="p-4 flex-1 flex flex-col">
+              <h4 className="font-semibold text-gray-900 mb-1 line-clamp-1">{restaurant.name}</h4>
+              <p className="text-sm text-gray-600 mb-2 line-clamp-1 flex-1">{restaurant.address}</p>
+              <div className="flex items-center gap-2 mt-auto">
+                {restaurant.rating && (
+                  <span className="text-sm text-yellow-600">⭐ {restaurant.rating}</span>
+                )}
+                {restaurant.user_ratings_total && (
+                  <span className="text-xs text-gray-500">({restaurant.user_ratings_total})</span>
+                )}
               </div>
-            </Link>
-          ))}
-        </div>
-        {restaurants.length > 0 && (
-          <>
-            <button
-              onClick={() => scroll('left')}
-              className="absolute left-0 top-1/2 -translate-y-1/2 bg-white rounded-full p-2 shadow-md hover:bg-gray-50"
-            >
-              ←
-            </button>
-            <button
-              onClick={() => scroll('right')}
-              className="absolute right-0 top-1/2 -translate-y-1/2 bg-white rounded-full p-2 shadow-md hover:bg-gray-50"
-            >
-              →
-            </button>
-          </>
-        )}
+            </div>
+          </Link>
+        ))}
       </div>
     </div>
   )
@@ -150,7 +122,7 @@ export function HomeDealsSection() {
         <h3 className="text-xl font-bold">羊毛专区</h3>
         <ViewMoreButton href="/deals" />
       </div>
-      <div className="space-y-3">
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
         {deals.slice(0, HOME_LIMITS.DEALS).map((deal) => (
           <Link
             key={deal.id}
@@ -211,7 +183,7 @@ export function HomeGossipSection() {
         <h3 className="text-xl font-bold">八卦专区</h3>
         <ViewMoreButton href="/gossip" />
       </div>
-      <div className="space-y-3">
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
         {articles.slice(0, HOME_LIMITS.GOSSIP).map((article) => (
           <Link
             key={article.id}
@@ -264,7 +236,7 @@ export function HomePortfolioSection() {
   if (loading || !portfolioData) {
     return (
       <CollapsibleSection
-        title="我的资产"
+        title="💼 我的资产"
         summary="加载中..."
         defaultCollapsed={true}
       >
@@ -281,7 +253,7 @@ export function HomePortfolioSection() {
 
   return (
     <CollapsibleSection
-      title="我的资产"
+      title="💼 我的资产"
       summary={summary}
       defaultCollapsed={true}
     >

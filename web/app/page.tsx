@@ -1,5 +1,6 @@
 import { Metadata } from 'next'
 import { TabNavigation } from './components/TabNavigation'
+import { TodayCommandBar } from './components/TodayCommandBar'
 import { TodayBrief } from './components/TodayBrief'
 import { HomePortfolioSection, HomeRestaurantSection, HomeDealsSection, HomeGossipSection } from './components/HomeSections'
 import { SITE_METADATA } from './lib/constants'
@@ -35,8 +36,11 @@ export default function Home() {
   return (
     <div className="min-h-screen bg-gray-50">
       <TabNavigation activeTab="home" />
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-6 pb-12 space-y-8">
-        {/* Module 1: Today Brief */}
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 space-y-6">
+        {/* Today Command Bar - Top Priority */}
+        <TodayCommandBar />
+        
+        {/* Today Brief - Card Grid Layout */}
         <TodayBrief />
 
         {/* Module 2: Portfolio (Collapsible) */}
