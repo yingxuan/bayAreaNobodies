@@ -4,7 +4,7 @@ from app.database import get_db
 from app.models import Holding, User
 from app.schemas import PortfolioSummary, HoldingCreate, AddPositionRequest, ReducePositionRequest
 from app.auth import get_current_user
-from app.services.stock_service import get_stock_price, get_stock_daily_trend, get_stock_intraday_data
+from app.services.stock_service import get_stock_price, get_stock_daily_trend, get_stock_intraday_data, get_portfolio_advice
 from typing import List, Dict, Optional
 from concurrent.futures import ThreadPoolExecutor, as_completed
 import os
@@ -358,6 +358,111 @@ def get_intraday_data(ticker: str):
         "ticker": ticker,
         "intraday_data": intraday_data if intraday_data else []
     }
+
+
+@router.get("/advice")
+def get_portfolio_investment_advice(
+    db: Session = Depends(get_db)
+):
+    """
+    Get AI investment advice based on portfolio holdings and market conditions
+    """
+    # Get portfolio data (using default user)
+    default_user = get_or_create_default_user(db)
+    if not default_user:
+        return {"advice": None, "error": "Could not create default user"}
+    
+    holdings = db.query(Holding).filter(Holding.user_id == default_user.id).all()
+    
+    if not holdings:
+        # Fallback to CSV if no DB holdings
+        try:
+            csv_data = get_csv_portfolio_summary()
+            if csv_data and csv_data.get('holdings'):
+                holdings_list = csv_data['holdings']
+                total_value = csv_data.get('total_value', 0)
+                total_pnl = csv_data.get('total_pnl', 0)
+                total_pnl_percent = csv_data.get('total_pnl_percent', 0)
+                day_gain = csv_data.get('day_gain', 0)
+                day_gain_percent = csv_data.get('day_gain_percent', 0)
+                
+                advice = get_portfolio_advice(
+                    holdings_list,
+                    total_value,
+                    total_pnl,
+                    total_pnl_percent,
+                    day_gain,
+                    day_gain_percent
+                )
+                return {"advice": advice}
+        except Exception as e:
+            print(f"Error getting CSV portfolio for advice: {e}")
+        
+        return {"advice": None, "error": "No holdings found"}
+    
+    # Calculate portfolio summary
+    total_cost = sum(h.cost_basis for h in holdings)
+    holdings_data = []
+    total_value = 0.0
+    total_day_gain = 0.0
+    
+    for holding in holdings:
+        current_price = get_stock_price(holding.ticker)
+        change_amount, change_percent = get_stock_daily_trend(holding.ticker)
+        
+        if current_price:
+            value = current_price * holding.quantity
+            total_value += value
+            day_gain = change_amount * holding.quantity if change_amount is not None else 0
+            total_day_gain += day_gain
+            
+            pnl = value - holding.cost_basis
+            pnl_percent = (pnl / holding.cost_basis * 100) if holding.cost_basis > 0 else 0
+            
+            holdings_data.append({
+                "ticker": holding.ticker,
+                "quantity": holding.quantity,
+                "current_price": current_price,
+                "value": value,
+                "total_gain": pnl,
+                "total_gain_percent": pnl_percent,
+                "day_gain": day_gain,
+                "day_gain_percent": change_percent if change_percent is not None else 0
+            })
+        else:
+            holdings_data.append({
+                "ticker": holding.ticker,
+                "quantity": holding.quantity,
+                "current_price": None,
+                "value": holding.cost_basis,
+                "total_gain": 0,
+                "total_gain_percent": 0,
+                "day_gain": 0,
+                "day_gain_percent": 0
+            })
+            total_value += holding.cost_basis
+    
+    total_pnl = total_value - total_cost
+    total_pnl_percent = (total_pnl / total_cost * 100) if total_cost > 0 else 0
+    day_gain_percent = (total_day_gain / total_value * 100) if total_value > 0 else 0
+    
+    # Get AI advice
+    advice = get_portfolio_advice(
+        holdings_data,
+        total_value,
+        total_pnl,
+        total_pnl_percent,
+        total_day_gain,
+        day_gain_percent
+    )
+    
+    if advice is None:
+        return {
+            "advice": None, 
+            "error": "无法获取投资建议。可能的原因：\n1. GEMINI_API_KEY 未配置或无效\n2. Gemini API 配额已用完（免费层每日限额）\n3. API 调用频率过高，请稍后再试\n\n请检查 .env 文件中的 GEMINI_API_KEY 配置，或等待配额重置。"
+        }
+    
+    return {"advice": advice}
 
 
 @router.post("/add-position")

@@ -41,6 +41,7 @@ services:
       GOOGLE_CSE_ID: ${GOOGLE_CSE_ID:-}
       GOOGLE_CSE_ENDPOINT: ${GOOGLE_CSE_ENDPOINT:-https://www.googleapis.com/customsearch/v1}
       FINNHUB_API_KEY: ${FINNHUB_API_KEY:-}
+      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
       SECRET_KEY: ${SECRET_KEY:-dev-secret-key-change-in-production}
       TZ: America/Los_Angeles
     ports:

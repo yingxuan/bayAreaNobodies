@@ -499,12 +499,21 @@ function WealthTab() {
   const [sortColumn, setSortColumn] = useState<string | null>('value')
   const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('desc')
   const [intradayDataCache, setIntradayDataCache] = useState<Record<string, any[]>>({})
+  const [investmentAdvice, setInvestmentAdvice] = useState<string | null>(null)
+  const [adviceLoading, setAdviceLoading] = useState(false)
   const videoCarouselRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
     fetchWealth()
     loadPortfolio()
   }, [])
+
+  useEffect(() => {
+    // Load investment advice after portfolio is loaded
+    if (portfolioData && portfolioData.holdings && portfolioData.holdings.length > 0) {
+      loadInvestmentAdvice()
+    }
+  }, [portfolioData])
 
   const fetchWealth = async () => {
     setLoading(true)
@@ -544,6 +553,23 @@ function WealthTab() {
       console.error('Error loading portfolio:', error)
     } finally {
       setPortfolioLoading(false)
+    }
+  }
+
+  const loadInvestmentAdvice = async () => {
+    setAdviceLoading(true)
+    try {
+      const res = await fetch(`${API_URL}/portfolio/advice`)
+      if (res.ok) {
+        const data = await res.json()
+        setInvestmentAdvice(data.advice || null)
+      } else {
+        console.error('Error loading investment advice:', res.status, res.statusText)
+      }
+    } catch (error) {
+      console.error('Error loading investment advice:', error)
+    } finally {
+      setAdviceLoading(false)
     }
   }
 
@@ -987,6 +1013,75 @@ function WealthTab() {
               </tbody>
             </table>
           </div>
+
+          {/* Gemini Investment Advice Section */}
+          {portfolioData && portfolioData.holdings && portfolioData.holdings.length > 0 && (
+            <div className="mt-8 bg-gradient-to-r from-blue-50 to-indigo-50 rounded-lg p-6 border border-blue-200">
+              <div className="flex items-center justify-between mb-4">
+                <h3 className="text-xl font-bold text-gray-900 flex items-center">
+                  <svg className="w-6 h-6 mr-2 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" />
+                  </svg>
+                  Gemini 投资建议
+                </h3>
+                {adviceLoading && (
+                  <div className="text-sm text-gray-500">生成中...</div>
+                )}
+              </div>
+              
+              {adviceLoading ? (
+                <div className="flex items-center justify-center py-8">
+                  <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
+                  <span className="ml-3 text-gray-600">正在分析您的投资组合...</span>
+                </div>
+              ) : investmentAdvice ? (
+                <div className="prose max-w-none">
+                  <div className="text-gray-700 whitespace-pre-wrap leading-relaxed">
+                    {investmentAdvice.split('\n').map((line: string, idx: number) => {
+                      // Format bold text (lines starting with **)
+                      if (line.trim().startsWith('**') && line.trim().endsWith('**')) {
+                        const text = line.trim().replace(/\*\*/g, '')
+                        return (
+                          <div key={idx} className="font-bold text-gray-900 mt-4 mb-2 text-lg">
+                            {text}
+                          </div>
+                        )
+                      } else if (line.trim().startsWith('**')) {
+                        const text = line.replace(/\*\*/g, '')
+                        return (
+                          <div key={idx} className="font-semibold text-gray-900 mt-3 mb-1">
+                            {text}
+                          </div>
+                        )
+                      } else if (line.trim().startsWith('-') || line.trim().startsWith('•')) {
+                        return (
+                          <div key={idx} className="ml-4 mb-2 text-gray-700">
+                            {line}
+                          </div>
+                        )
+                      } else if (line.trim() === '') {
+                        return <div key={idx} className="mb-2"></div>
+                      } else {
+                        return (
+                          <div key={idx} className="mb-2 text-gray-700">
+                            {line}
+                          </div>
+                        )
+                      }
+                    })}
+                  </div>
+                </div>
+              ) : (
+                <div className="text-center py-4 text-gray-500">
+                  <p className="mb-2">无法获取投资建议。</p>
+                  <p className="text-sm">请确保已配置 GEMINI_API_KEY 环境变量，并且 API 密钥有效。</p>
+                  <p className="text-xs mt-2 text-gray-400">
+                    配置方法：在项目根目录的 .env 文件中添加 GEMINI_API_KEY=your_api_key_here
+                  </p>
+                </div>
+              )}
+            </div>
+          )}
         </div>
       )}
 

@@ -558,7 +558,8 @@ def get_financial_advice(ticker: str, current_price: Optional[float],
     
     try:
         genai.configure(api_key=GEMINI_API_KEY)
-        model = genai.GenerativeModel('gemini-pro')
+        # Use gemini-2.0-flash for fast responses
+        model = genai.GenerativeModel('gemini-2.0-flash')
         
         # Build context for Gemini
         price_info = f"Current price: ${current_price:.2f}" if current_price else "Price: N/A"
@@ -596,4 +597,135 @@ Keep the response under 200 words and be practical and data-driven."""
         return advice
     except Exception as e:
         print(f"Error getting financial advice from Gemini for {ticker}: {e}")
+        return None
+
+
+def get_portfolio_advice(holdings: List[Dict], total_value: float, total_pnl: float, 
+                         total_pnl_percent: float, day_gain: float, day_gain_percent: float) -> Optional[str]:
+    """
+    Get investment advice from Gemini AI based on entire portfolio
+    
+    Args:
+        holdings: List of holding dictionaries with ticker, quantity, current_price, total_gain, etc.
+        total_value: Total portfolio value
+        total_pnl: Total profit/loss
+        total_pnl_percent: Total P&L percentage
+        day_gain: Today's gain/loss
+        day_gain_percent: Today's gain/loss percentage
+    
+    Returns:
+        Investment advice string or None if error
+    """
+    if not GEMINI_API_KEY or not GEMINI_AVAILABLE:
+        return None
+    
+    # Use date-based cache key to ensure only one query per day
+    from datetime import datetime
+    today = datetime.now().strftime("%Y%m%d")
+    cache_key = f"portfolio_advice:{today}"
+    
+    # Check cache (24 hour cache - one query per day)
+    if redis_client:
+        cached = redis_client.get(cache_key)
+        if cached:
+            return cached
+    
+    try:
+        genai.configure(api_key=GEMINI_API_KEY)
+        # Use gemini-2.0-flash for fast responses
+        model = genai.GenerativeModel('gemini-2.0-flash')
+        
+        # Build portfolio summary
+        holdings_summary = []
+        for holding in holdings[:10]:  # Top 10 holdings
+            ticker = holding.get('ticker') or 'N/A'
+            quantity = holding.get('quantity') or 0
+            price = holding.get('current_price') or 0
+            value = holding.get('value') or 0
+            total_gain = holding.get('total_gain') or 0
+            total_gain_percent = holding.get('total_gain_percent') or 0
+            day_gain = holding.get('day_gain') or 0
+            day_gain_percent = holding.get('day_gain_percent') or 0
+            
+            # Ensure all values are numeric (handle None values)
+            try:
+                quantity = float(quantity) if quantity is not None else 0.0
+                price = float(price) if price is not None else 0.0
+                value = float(value) if value is not None else 0.0
+                total_gain = float(total_gain) if total_gain is not None else 0.0
+                total_gain_percent = float(total_gain_percent) if total_gain_percent is not None else 0.0
+                day_gain = float(day_gain) if day_gain is not None else 0.0
+                day_gain_percent = float(day_gain_percent) if day_gain_percent is not None else 0.0
+            except (ValueError, TypeError):
+                # If conversion fails, use defaults
+                quantity = 0.0
+                price = 0.0
+                value = 0.0
+                total_gain = 0.0
+                total_gain_percent = 0.0
+                day_gain = 0.0
+                day_gain_percent = 0.0
+            
+            holdings_summary.append(
+                f"- {ticker}: {quantity} shares @ ${price:.2f}, "
+                f"Value: ${value:.2f}, "
+                f"Total Gain: ${total_gain:.2f} ({total_gain_percent:+.2f}%), "
+                f"Today: ${day_gain:.2f} ({day_gain_percent:+.2f}%)"
+            )
+        
+        holdings_text = "\n".join(holdings_summary) if holdings_summary else "No holdings"
+        
+        # Get current date for context
+        from datetime import datetime
+        current_date = datetime.now().strftime("%Y-%m-%d")
+        
+        prompt = f"""你是一名专业的理财专家，非常熟悉最新的金融股市房地产政策和形势。请注意，**一定要根据最新的经济政治形势和我的实时持仓信息，给出切实的理财建议。不要有模式化的回答**。
+
+投资组合概况（截至 {current_date}）：
+- 总资产价值：${total_value:,.2f}
+- 总盈亏：${total_pnl:,.2f} ({total_pnl_percent:+.2f}%)
+- 今日盈亏：${day_gain:,.2f} ({day_gain_percent:+.2f}%)
+
+当前持仓：
+{holdings_text}
+
+请基于以下要求提供专业的投资建议：
+1. **结合最新经济政治形势**：分析当前宏观经济环境、货币政策、地缘政治等因素对投资组合的影响
+2. **针对具体持仓分析**：对每只股票或主要持仓给出具体评价，不要泛泛而谈
+3. **提供切实可行的建议**：给出具体的操作建议（如加仓、减仓、调仓），并说明理由
+4. **风险评估**：指出当前投资组合的主要风险点
+5. **市场展望**：结合最新市场动态，给出短期和中期展望
+
+**重要提示**：
+- 必须结合最新的经济政治形势，不要使用过时的信息
+- 必须针对我的具体持仓给出建议，不要使用模板化的回答
+- 建议要具体、可操作，避免空泛的表述
+- 总字数控制在 400-600 字"""
+        
+        response = model.generate_content(prompt)
+        advice = response.text.strip()
+        
+        # Cache for 24 hours (one query per day)
+        if redis_client:
+            # Set cache to expire at end of day (86400 seconds = 24 hours)
+            redis_client.setex(cache_key, 86400, advice)
+        
+        return advice
+    except Exception as e:
+        error_msg = str(e)
+        print(f"Error getting portfolio advice from Gemini: {error_msg}")
+        
+        # Log more details for debugging
+        if "API_KEY" in error_msg or "api_key" in error_msg.lower():
+            print("GEMINI_API_KEY may be missing or invalid")
+        elif "quota" in error_msg.lower() or "rate" in error_msg.lower() or "429" in error_msg:
+            print("Gemini API quota or rate limit exceeded")
+            print("This may be due to:")
+            print("  1. Free tier quota exhausted (wait for daily reset)")
+            print("  2. Rate limit exceeded (wait a few minutes)")
+            print("  3. Need to upgrade to paid plan")
+        else:
+            import traceback
+            traceback.print_exc()
+        
         return None
