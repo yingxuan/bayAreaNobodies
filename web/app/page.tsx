@@ -2,6 +2,7 @@ import { Metadata } from 'next'
 import { TabNavigation } from './components/TabNavigation'
 import { TodayCommandBar } from './components/TodayCommandBar'
 import { TodayBrief } from './components/TodayBrief'
+import { TechRadar } from './components/TechRadar'
 import { HomePortfolioSection, HomeRestaurantSection, HomeDealsSection, HomeGossipSection } from './components/HomeSections'
 import { SITE_METADATA } from './lib/constants'
 
@@ -40,8 +41,18 @@ export default function Home() {
         {/* Today Command Bar - Top Priority */}
         <TodayCommandBar />
         
-        {/* Today Brief - Card Grid Layout */}
-        <TodayBrief />
+        {/* First Screen: Today Brief + Tech Radar (Desktop: side by side, Mobile: stacked) */}
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+          {/* Today Brief - Card Grid Layout (2/3 width on desktop) */}
+          <div className="lg:col-span-8">
+            <TodayBrief />
+          </div>
+          
+          {/* Tech Radar (1/3 width on desktop) */}
+          <div className="lg:col-span-4">
+            <TechRadar />
+          </div>
+        </div>
 
         {/* Module 2: Portfolio (Collapsible) */}
         <HomePortfolioSection />
