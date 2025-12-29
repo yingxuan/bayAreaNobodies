@@ -1,9 +1,11 @@
 import type { Metadata } from 'next'
 import './globals.css'
+import { SITE_METADATA } from './lib/constants'
 
 export const metadata: Metadata = {
-  title: '湾区牛马日常',
-  description: 'Trending feeds, portfolio, and coupons for Bay Area',
+  metadataBase: new URL(SITE_METADATA.url),
+  title: SITE_METADATA.title,
+  description: SITE_METADATA.description,
 }
 
 export default function RootLayout({

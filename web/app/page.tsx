@@ -1,20 +1,58 @@
-'use client'
+import { Metadata } from 'next'
+import { TabNavigation } from './components/TabNavigation'
+import { TodayBrief } from './components/TodayBrief'
+import { HomePortfolioSection, HomeRestaurantSection, HomeDealsSection, HomeGossipSection } from './components/HomeSections'
+import { SITE_METADATA } from './lib/constants'
 
-import { useEffect } from 'react'
-import { useRouter } from 'next/navigation'
+export const metadata: Metadata = {
+  title: '湾区牛马日常｜湾区码农老中一站式今日简报',
+  description: '每日30秒：资产波动、今天吃什么、今日羊毛、热帖TL;DR、避坑提醒。',
+  openGraph: {
+    title: '湾区牛马日常｜湾区码农老中一站式今日简报',
+    description: '每日30秒：资产波动、今天吃什么、今日羊毛、热帖TL;DR、避坑提醒。',
+    url: SITE_METADATA.url,
+    siteName: '湾区牛马日常',
+    images: [
+      {
+        url: SITE_METADATA.ogImage,
+        width: 1200,
+        height: 630,
+        alt: '湾区牛马日常',
+      },
+    ],
+    locale: 'zh_CN',
+    type: 'website',
+  },
+  twitter: {
+    card: 'summary_large_image',
+    title: '湾区牛马日常｜湾区码农老中一站式今日简报',
+    description: '每日30秒：资产波动、今天吃什么、今日羊毛、热帖TL;DR、避坑提醒。',
+    images: [SITE_METADATA.ogImage],
+  },
+}
 
-// Main page - redirects to /wealth
 export default function Home() {
-  const router = useRouter()
-  
-  useEffect(() => {
-    router.replace('/wealth')
-  }, [router])
-
   return (
-    <div className="min-h-screen flex items-center justify-center">
-      <div className="text-center">
-        <p className="text-gray-500">正在跳转...</p>
+    <div className="min-h-screen bg-gray-50">
+      <TabNavigation activeTab="home" />
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-6 pb-12 space-y-8">
+        {/* Module 1: Today Brief */}
+        <TodayBrief />
+
+        {/* Module 2: Portfolio (Collapsible) */}
+        <HomePortfolioSection />
+
+        {/* Module 3: Life Decisions */}
+        <div className="space-y-6">
+          <HomeRestaurantSection cuisineType="chinese" title="今天吃什么？" />
+          <HomeRestaurantSection cuisineType="boba" title="来点冰的甜的！" />
+        </div>
+
+        {/* Module 4: Information Radar */}
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          <HomeDealsSection />
+          <HomeGossipSection />
+        </div>
       </div>
     </div>
   )

@@ -4,6 +4,7 @@ import Link from 'next/link'
 
 export function TabNavigation({ activeTab }: { activeTab: string }) {
   const tabs = [
+    { key: 'home', label: '首页', path: '/' },
     { key: 'wealth', label: '暴富', path: '/wealth' },
     { key: 'food', label: '美食', path: '/food' },
     { key: 'deals', label: '羊毛', path: '/deals' },
@@ -16,7 +17,7 @@ export function TabNavigation({ activeTab }: { activeTab: string }) {
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex justify-between h-16">
             <div className="flex items-center">
-              <Link href="/wealth" className="text-xl font-bold text-gray-900 hover:text-blue-600">
+              <Link href="/" className="text-xl font-bold text-gray-900 hover:text-blue-600">
                 湾区牛马日常
               </Link>
             </div>

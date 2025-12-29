@@ -2,14 +2,10 @@
 
 import { useState, useEffect, useRef } from 'react'
 import Link from 'next/link'
+import { generateSlug } from '../lib/slug'
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'
 
-// Debug: Log API URL on component load
-if (typeof window !== 'undefined') {
-  console.log('[Tabs] API_URL:', API_URL)
-  console.log('[Tabs] NEXT_PUBLIC_API_URL env:', process.env.NEXT_PUBLIC_API_URL)
-}
 
 // 美食 (Food) Tab - 3 sections: Restaurants, Boba, Bloggers
 export function FoodTab() {
@@ -36,16 +32,11 @@ function RestaurantSection({ cuisineType, title, description }: { cuisineType: s
     setLoading(true)
     try {
       const url = `${API_URL}/food/restaurants?cuisine_type=${cuisineType}&limit=20`
-      console.log('[RestaurantSection] Fetching from:', url)
       const res = await fetch(url)
-      console.log('[RestaurantSection] Response status:', res.status, res.statusText)
       if (res.ok) {
         const data = await res.json()
-        console.log('[RestaurantSection] Received data:', data.restaurants?.length || 0, 'restaurants')
         setRestaurants(data.restaurants || [])
       } else {
-        const errorText = await res.text()
-        console.error('[RestaurantSection] Error:', res.status, res.statusText, errorText)
         setRestaurants([])
       }
     } catch (error) {
@@ -210,14 +201,11 @@ function BloggerSection() {
       const res = await fetch(`${API_URL}/food/bloggers?limit=20`)
       if (res.ok) {
         const data = await res.json()
-        console.log('[BloggerSection] Fetched:', data)
         setVideos(data.videos || [])
       } else {
-        console.error('[BloggerSection] API error:', res.status, res.statusText)
         setVideos([])
       }
     } catch (error) {
-      console.error('Error fetching blogger videos:', error)
       setVideos([])
     } finally {
       setLoading(false)
@@ -347,18 +335,13 @@ export function DealsTab() {
       const url = selectedCategory 
         ? `${API_URL}/deals/feed?category=${selectedCategory}`
         : `${API_URL}/feeds/deals`
-      console.log('[DealsTab] Fetching from:', url)
       const res = await fetch(url)
-      console.log('[DealsTab] Response status:', res.status, res.statusText)
       if (res.ok) {
         const data = await res.json()
-        console.log('[DealsTab] Received data:', data.coupons?.length || 0, 'coupons')
         setCoupons(data.coupons || [])
         setDataFreshness(data.data_freshness || 'fresh')
         setUsageInfo(data.usage_info || null)
       } else {
-        const errorText = await res.text()
-        console.error('[DealsTab] Error:', res.status, res.statusText, errorText)
         setCoupons([])
       }
     } catch (error) {
@@ -713,16 +696,11 @@ export function WealthTab() {
   const fetchWealth = async () => {
     setLoading(true)
     try {
-      console.log('[WealthTab] Fetching from:', `${API_URL}/feeds/wealth`)
       const res = await fetch(`${API_URL}/feeds/wealth`)
-      console.log('[WealthTab] Response status:', res.status, res.statusText)
       if (res.ok) {
         const data = await res.json()
-        console.log('[WealthTab] Received data:', data.articles?.length || 0, 'articles')
         setVideos(data.articles || [])
       } else {
-        const errorText = await res.text()
-        console.error('Error fetching wealth feed:', res.status, res.statusText, errorText)
         setVideos([])
       }
     } catch (error) {
@@ -790,7 +768,6 @@ export function WealthTab() {
           // Small delay between requests
           await new Promise(resolve => setTimeout(resolve, 200))
         } catch (error) {
-          console.error(`Error loading intraday data for ${holding.ticker}:`, error)
         }
       }
     }
@@ -1064,11 +1041,8 @@ export function WealthTab() {
     }
   }
 
-  console.log('[WealthTab] Render - loading:', loading, 'portfolioLoading:', portfolioLoading, 'videos:', videos.length, 'portfolioData:', portfolioData ? 'exists' : 'null')
-
   // Show loading only if both are loading
   if (loading && portfolioLoading) {
-    console.log('[WealthTab] Both loading, showing loading screen')
     return <div className="text-center py-8">Loading...</div>
   }
 
@@ -1745,16 +1719,11 @@ export function GossipTab() {
     setLoading(true)
     try {
       const url = `${API_URL}/feeds/gossip`
-      console.log('[GossipTab] Fetching from:', url)
       const res = await fetch(url)
-      console.log('[GossipTab] Response status:', res.status, res.statusText)
       if (res.ok) {
         const data = await res.json()
-        console.log('[GossipTab] Received data:', data.articles?.length || 0, 'articles')
         setArticles(data.articles || [])
       } else {
-        const errorText = await res.text()
-        console.error('[GossipTab] Error:', res.status, res.statusText, errorText)
         setArticles([])
       }
     } catch (error) {
@@ -1790,7 +1759,7 @@ export function GossipTab() {
           {articles.map((article) => (
             <Link
               key={article.id}
-              href={`/article/${article.id}`}
+              href={`/posts/${article.source_type === 'di_li' ? '1point3acres' : article.source_type === 'reddit' ? 'reddit' : 'teamblind'}/${generateSlug(article.title || '')}-${article.id}`}
               className="bg-white rounded-xl shadow-sm hover:shadow-md transition-all duration-200 p-6 border border-gray-100 block"
             >
               <div className="flex items-start justify-between mb-3">
