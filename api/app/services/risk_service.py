@@ -89,6 +89,11 @@ def get_cache_key(city: str, date_str: str) -> str:
     return f"risk:today:{city}:{date_str}"
 
 
+def get_actions_cache_key(city: str, date_str: str) -> str:
+    """Get Redis key for today's actions cache"""
+    return f"risk:actions:{city}:{date_str}"
+
+
 def acquire_lock() -> bool:
     """Acquire distributed lock to prevent cache stampede"""
     if not redis_client:
@@ -355,4 +360,272 @@ def fetch_risk_today(city: str = "cupertino") -> Dict:
         }
     finally:
         release_lock()
+
+
+# Mock actions library (fallback when Gemini unavailable)
+MOCK_ACTIONS = [
+    {
+        "title": "检查 401(k) rollover 截止时间",
+        "why": "避免错过 60 天窗口导致税务后果",
+        "action": "今天把旧账户的 rollover 流程和所需表格确认完",
+        "deadline": "60 天内",
+        "severity": "high",
+        "links": []
+    },
+    {
+        "title": "确认 HSA/FSA 账户余额和使用期限",
+        "why": "FSA 通常年底清零，HSA 可累积但需合理规划",
+        "action": "登录账户查看余额，规划剩余医疗支出",
+        "deadline": "年底前",
+        "severity": "medium",
+        "links": []
+    },
+    {
+        "title": "准备报税所需文件清单",
+        "why": "提前准备可避免报税季手忙脚乱，确保不遗漏抵扣项",
+        "action": "整理 W-2、1099、房贷利息、慈善捐赠等文件",
+        "deadline": "1 月底前",
+        "severity": "medium",
+        "links": []
+    }
+]
+
+
+def is_mostly_chinese_actions(text: str) -> bool:
+    """Check if text is mostly Chinese (for actions validation)"""
+    if not text:
+        return False
+    # Count Chinese characters (CJK Unified Ideographs)
+    chinese_chars = sum(1 for c in text if '\u4e00' <= c <= '\u9fff')
+    total_chars = len([c for c in text if c.strip()])
+    if total_chars == 0:
+        return False
+    return chinese_chars / total_chars >= 0.5
+
+
+def validate_action_item(item: Dict) -> bool:
+    """Validate a single action item"""
+    if not isinstance(item, dict):
+        return False
+    
+    required_fields = ["title", "why", "action", "severity"]
+    for field in required_fields:
+        if field not in item or not item[field] or len(str(item[field]).strip()) < 3:
+            return False
+    
+    # Check severity
+    if item["severity"] not in ["high", "medium", "low"]:
+        return False
+    
+    # Check if content is mostly Chinese
+    for field in ["title", "why", "action"]:
+        if not is_mostly_chinese_actions(str(item[field])):
+            return False
+    
+    # Validate deadline (can be empty string or valid text)
+    if "deadline" not in item:
+        item["deadline"] = ""
+    
+    # Validate links (optional, must be list)
+    if "links" not in item:
+        item["links"] = []
+    if not isinstance(item["links"], list):
+        item["links"] = []
+    
+    return True
+
+
+def generate_actions_with_gemini(city: str, date_str: str) -> Optional[List[Dict]]:
+    """Generate today's actions using Gemini AI"""
+    if not GEMINI_AVAILABLE or not GEMINI_API_KEY:
+        return None
+    
+    try:
+        genai.configure(api_key=GEMINI_API_KEY)
+        # Try multiple model names with fallback (use latest available models)
+        # Note: gemini-3-flash may not be available yet, will fallback to gemini-2.5-flash
+        try:
+            model = genai.GenerativeModel('gemini-3-flash')
+        except:
+            try:
+                model = genai.GenerativeModel('gemini-2.5-flash')
+            except:
+                try:
+                    model = genai.GenerativeModel('gemini-2.5-pro')
+                except:
+                    try:
+                        model = genai.GenerativeModel('gemini-2.0-flash')
+                    except:
+                        model = genai.GenerativeModel('gemini-pro')
+        
+        prompt = f"""【系统要求】
+你是面向旧金山湾区的资深工程师生活助理，只输出严格 JSON，不要输出多余文字。
+【用户需求】
+请给"旧金山湾区的码农"生成今天必须要做的 3 件事，要求：
+- 全中文
+- 每条都包含：title, why, action, deadline(可为空字符串), severity(high/medium/low)
+- 偏实用：税务/财务/身份/工作/生活办事相关（例如 tax harvesting、报税准备、401k rollover、HSA/FSA、RSU vest、信用卡福利、租房/保险续期等）
+- 避免违法或鼓励逃税；若涉及税务只给合规建议
+- 不要泛泛而谈，不要"注意身体""多喝水"
+- action 必须具体可执行（1 句）
+输出 JSON schema：
+{{"items":[{{"title":"","why":"","action":"","deadline":"","severity":""}}]}}
+
+当前日期：{date_str}
+城市：{city}"""
+        
+        response = model.generate_content(prompt)
+        text = response.text.strip()
+        
+        # Try to extract JSON from markdown code blocks
+        if "```json" in text:
+            text = text.split("```json")[1].split("```")[0].strip()
+        elif "```" in text:
+            text = text.split("```")[1].split("```")[0].strip()
+        
+        data = json.loads(text)
+        items = data.get("items", [])
+        
+        # Validate and filter items
+        valid_items = []
+        for item in items:
+            if validate_action_item(item):
+                valid_items.append(item)
+            else:
+                print(f"Invalid action item discarded: {item}")
+        
+        # Ensure we have exactly 3 items
+        if len(valid_items) >= 3:
+            return valid_items[:3]
+        elif len(valid_items) > 0:
+            # Fill with mock if needed
+            needed = 3 - len(valid_items)
+            valid_items.extend(MOCK_ACTIONS[:needed])
+            return valid_items[:3]
+        else:
+            return None
+            
+    except Exception as e:
+        print(f"Error generating actions with Gemini: {e}")
+        import traceback
+        traceback.print_exc()
+        return None
+
+
+def fetch_today_actions(city: str = "cupertino") -> Dict:
+    """
+    Get today's actions (今日必做 3 件事)
+    Returns cached result if available, otherwise generates new actions
+    """
+    today = datetime.now(pytz.UTC)
+    date_str = today.strftime("%Y-%m-%d")
+    
+    cache_key = get_actions_cache_key(city, date_str)
+    lock_key = f"risk:actions:lock:{city}:{date_str}"
+    
+    # Check cache first
+    if redis_client:
+        cached = redis_client.get(cache_key)
+        if cached:
+            try:
+                result = json.loads(cached)
+                result["dataSource"] = "cache"
+                return result
+            except:
+                pass
+    
+    # Acquire lock
+    if redis_client:
+        lock_acquired = redis_client.set(lock_key, "1", nx=True, ex=30)
+        if not lock_acquired:
+            # Wait a bit and try cache again
+            import time
+            time.sleep(0.5)
+            cached = redis_client.get(cache_key)
+            if cached:
+                try:
+                    result = json.loads(cached)
+                    result["dataSource"] = "cache"
+                    return result
+                except:
+                    pass
+            # If still no cache, return mock
+            return get_mock_actions_response(city, date_str)
+    
+    try:
+        # Try Gemini
+        items = generate_actions_with_gemini(city, date_str)
+        
+        if items and len(items) >= 3:
+            result = {
+                "city": city,
+                "date": date_str,
+                "updatedAt": today.isoformat(),
+                "dataSource": "gemini",
+                "stale": False,
+                "ttlSeconds": 43200,
+                "items": items,
+                "disclaimer": "信息仅供参考，不构成税务/法律/投资建议。"
+            }
+            
+            # Cache for 12 hours
+            if redis_client:
+                redis_client.setex(cache_key, 43200, json.dumps(result, default=str))
+            
+            return result
+        else:
+            # Gemini failed or returned invalid data, try last-known-good
+            if redis_client:
+                # Try to get last known good (any cached data from today)
+                last_good = redis_client.get(cache_key)
+                if last_good:
+                    try:
+                        result = json.loads(last_good)
+                        result["stale"] = True
+                        result["dataSource"] = "cache"
+                        return result
+                    except:
+                        pass
+            
+            # Fallback to mock
+            return get_mock_actions_response(city, date_str)
+            
+    except Exception as e:
+        print(f"Error in fetch_today_actions: {e}")
+        import traceback
+        traceback.print_exc()
+        
+        # Try last-known-good
+        if redis_client:
+            last_good = redis_client.get(cache_key)
+            if last_good:
+                try:
+                    result = json.loads(last_good)
+                    result["stale"] = True
+                    result["dataSource"] = "cache"
+                    return result
+                except:
+                    pass
+        
+        # Final fallback: mock
+        return get_mock_actions_response(city, date_str)
+    finally:
+        # Release lock
+        if redis_client:
+            redis_client.delete(lock_key)
+
+
+def get_mock_actions_response(city: str, date_str: str) -> Dict:
+    """Return mock actions as fallback"""
+    today = datetime.now(pytz.UTC)
+    return {
+        "city": city,
+        "date": date_str,
+        "updatedAt": today.isoformat(),
+        "dataSource": "mock",
+        "stale": True,
+        "ttlSeconds": 43200,
+        "items": MOCK_ACTIONS,
+        "disclaimer": "信息仅供参考，不构成税务/法律/投资建议。"
+    }
 

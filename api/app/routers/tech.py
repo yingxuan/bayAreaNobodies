@@ -10,7 +10,7 @@ router = APIRouter()
 @router.get("/trending")
 def get_tech_trending(
     source: str = Query(default="hn", description="Source: hn (Hacker News)"),
-    limit: int = Query(default=12, ge=1, le=50, description="Number of items to return")
+    limit: int = Query(default=3, ge=1, le=50, description="Number of items to return")
 ):
     """
     Get trending tech news from specified source

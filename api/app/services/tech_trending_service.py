@@ -65,7 +65,14 @@ def translate_title_to_chinese(title: str) -> str:
     if GEMINI_API_KEY and GEMINI_AVAILABLE:
         try:
             genai.configure(api_key=GEMINI_API_KEY)
-            model = genai.GenerativeModel('gemini-pro')
+            # Use gemini-1.5-flash or gemini-1.5-pro instead of gemini-pro
+            try:
+                model = genai.GenerativeModel('gemini-1.5-flash')
+            except:
+                try:
+                    model = genai.GenerativeModel('gemini-1.5-pro')
+                except:
+                    model = genai.GenerativeModel('gemini-pro')
             
             prompt = f"""请将以下英文科技新闻标题翻译成中文，保留公司名和技术术语的英文（如 OpenAI、GPT、NVIDIA），只翻译其他部分：
 
@@ -165,27 +172,31 @@ def generate_summary(title: str, url: str = "") -> Optional[str]:
 
 def fetch_hn_stories(limit: int = 12) -> List[Dict]:
     """
-    Fetch top stories from Hacker News using Algolia API
-    Returns list of story dicts
+    Fetch recent top stories from Hacker News using Algolia API
+    Returns list of story dicts sorted by recent popularity
     """
     try:
-        # Fetch front page stories (sorted by points, descending)
+        # Use search_by_date to get recent stories, then filter by points
+        # This ensures we get recent news, not historical popular posts
         url = f"{HN_API_BASE}/search_by_date"
         params = {
             "tags": "story",
             "numericFilters": "points>10",  # Only stories with >10 points
-            "hitsPerPage": limit,
-            "page": 0,
-            "orderBy": "popularity"  # Sort by popularity (points)
+            "hitsPerPage": limit * 2,  # Get more to filter by recency
+            "page": 0
         }
         
-        with httpx.Client(timeout=3.0) as client:
+        with httpx.Client(timeout=5.0) as client:
             response = client.get(url, params=params)
             response.raise_for_status()
             data = response.json()
             
             stories = []
-            for hit in data.get("hits", [])[:limit]:
+            now = datetime.now(pytz.UTC)
+            # Filter to only include stories from last 3 days
+            cutoff_date = now - timedelta(days=3)
+            
+            for hit in data.get("hits", []):
                 # Parse HN story
                 story_id = hit.get("objectID", "")
                 title = hit.get("title", "")
@@ -204,6 +215,10 @@ def fetch_hn_stories(limit: int = 12) -> List[Dict]:
                         created_dt = datetime.now(pytz.UTC)
                 except:
                     created_dt = datetime.now(pytz.UTC)
+                
+                # Only include stories from last 3 days
+                if created_dt < cutoff_date:
+                    continue
                 
                 # Generate tags and summary
                 tags = generate_tags(title, url)
@@ -226,8 +241,15 @@ def fetch_hn_stories(limit: int = 12) -> List[Dict]:
                 }
                 
                 stories.append(story)
+                
+                # Stop when we have enough recent stories
+                if len(stories) >= limit:
+                    break
             
-            return stories
+            # Sort by score (descending) for final ordering
+            stories.sort(key=lambda x: x.get("score", 0), reverse=True)
+            
+            return stories[:limit]
             
     except httpx.TimeoutException:
         print("HN API timeout")

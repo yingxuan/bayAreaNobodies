@@ -3,7 +3,8 @@
 import { useState, useEffect } from 'react'
 import Link from 'next/link'
 import { BriefItemCard } from './BriefItemCard'
-import { RiskStatusLight } from './RiskStatusLight'
+import { TodayActions } from './TodayActions'
+import { TodayEatCard } from './TodayEatCard'
 import { generateSlug } from '../lib/slug'
 import { DailyBriefItem, DailyBrief } from '../lib/dailyBrief'
 import { fetchHotTopics, HotTopic } from '../lib/hotTopics'
@@ -120,15 +121,13 @@ export function TodayBrief() {
     setLoading(true)
     try {
       // Fetch all data sources in parallel
-      const [portfolioRes, foodRes, dealsRes, gossipRes] = await Promise.all([
+      const [portfolioRes, dealsRes, gossipRes] = await Promise.all([
         fetch(`${API_URL}/portfolio/db-summary`).catch(() => null),
-        fetch(`${API_URL}/food/restaurants?cuisine_type=chinese&limit=1`).catch(() => null),
         fetch(`${API_URL}/feeds/deals?limit=1`).catch(() => null),
         fetch(`${API_URL}/feeds/gossip?limit=1`).catch(() => null),
       ])
 
       const portfolioData = portfolioRes?.ok ? await portfolioRes.json() : null
-      const foodData = foodRes?.ok ? await foodRes.json() : null
       const dealsData = dealsRes?.ok ? await dealsRes.json() : null
       const gossipData = gossipRes?.ok ? await gossipRes.json() : null
 
@@ -210,30 +209,7 @@ export function TodayBrief() {
       })
 
       // 2-4. Entry Cards (Small Cards) - Only one-line summary, no images/lists
-      // 2. Food Entry
-      if (foodData?.restaurants?.[0]) {
-        const restaurant = foodData.restaurants[0]
-        items.push({
-          id: `food-${restaurant.id}`,
-          type: 'food',
-          icon: '🍜',
-          title: '今天吃什么',
-          summary: `Cupertino 中餐 Top Pick: ${restaurant.name}${restaurant.rating ? ` ⭐${restaurant.rating}` : ''}`,
-          ctaText: '查看',
-          href: `/city/cupertino`,
-          tags: []
-        })
-      } else {
-        items.push({
-          id: 'food-fallback',
-          type: 'food',
-          icon: '🍜',
-          title: '今天吃什么',
-          summary: '暂无推荐',
-          ctaText: '查看',
-          href: '/food'
-        })
-      }
+      // Note: Food Entry is now handled by TodayEatCard component (rendered separately)
 
       // 3. Deal Entry
       if (dealsData?.coupons?.[0]) {
@@ -350,13 +326,17 @@ export function TodayBrief() {
         
         {/* Entry Cards (3 Small Cards) */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          {/* Today Eat Card (Special Component) */}
+          <TodayEatCard />
+          
+          {/* Other Entry Cards */}
           {brief.items.slice(1).map((item) => (
             <BriefItemCard key={item.id} item={item} size="small" />
           ))}
         </div>
 
-        {/* Risk Status Light (Horizontal Bar) */}
-        <RiskStatusLight risks={riskItems} />
+        {/* Today Actions (Replaced Risk Status Light) */}
+        <TodayActions />
       </div>
     </div>
   )

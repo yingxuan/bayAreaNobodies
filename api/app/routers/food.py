@@ -4,6 +4,7 @@ Food-related endpoints for the food tab:
 2. Check-in functionality
 3. Explore posts from 1point3acres and huaren
 4. Food blogger videos from YouTube
+5. Today's food pick (今天吃什么)
 """
 from fastapi import APIRouter, Depends, Query, HTTPException
 from sqlalchemy.orm import Session
@@ -586,4 +587,36 @@ async def get_food_blogger_videos(
             })
         
         return {"videos": result}
+
+
+@router.get("/today-pick")
+async def get_today_pick(
+    city: str = Query(default="cupertino", description="City name (e.g., cupertino, sunnyvale)"),
+    db: Session = Depends(get_db)
+):
+    """
+    Get today's food pick (restaurant + recommended dish)
+    
+    Returns:
+    - Randomly selected Chinese restaurant (deterministic per day)
+    - Best dish from the restaurant (from reviews or fallback)
+    - Google Maps URL for direct navigation
+    
+    Cached for 24 hours. Same result for all users on the same day.
+    """
+    from app.services.food_today_service import fetch_today_pick
+    
+    try:
+        return fetch_today_pick(city=city, db=db)
+    except Exception as e:
+        print(f"Error in /food/today-pick: {e}")
+        import traceback
+        traceback.print_exc()
+        # Never return 500, always return fallback
+        from datetime import datetime
+        import pytz
+        today = datetime.now(pytz.UTC)
+        date_str = today.strftime("%Y-%m-%d")
+        from app.services.food_today_service import get_mock_today_pick
+        return get_mock_today_pick(city, date_str)
 

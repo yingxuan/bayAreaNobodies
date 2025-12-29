@@ -6,7 +6,9 @@ import { CollapsibleSection } from './CollapsibleSection'
 import { ViewMoreButton } from './ViewMoreButton'
 import { HOME_LIMITS } from '../lib/constants'
 import { generateSlug } from '../lib/slug'
-import { translateDealTitle } from '../lib/i18n'
+import { getDealCategory, generateDealTitle, getDealMetadata, generateDealProductName, getDealImageUrl, getDealExternalUrl, getSourceName } from '../lib/i18n'
+import { getDealImage } from '../lib/dealImage'
+import { getDealCategoryCN, getDealReadableTitle, getDealSaveText, getDealBadges } from '../lib/dealFormat'
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'
 
@@ -95,12 +97,29 @@ export function HomeDealsSection() {
   const fetchDeals = async () => {
     setLoading(true)
     try {
-      // Client component - caching handled by server
-      const res = await fetch(`${API_URL}/feeds/deals?limit=${HOME_LIMITS.DEALS}`)
-      if (res.ok) {
-        const data = await res.json()
-        setDeals(data.coupons || [])
+      // Fetch both retail deals and food deals in parallel
+      const [retailRes, foodRes] = await Promise.all([
+        fetch(`${API_URL}/feeds/deals?limit=${HOME_LIMITS.DEALS}`).catch(() => null),
+        fetch(`${API_URL}/deals/food?city=cupertino&limit=4`).catch(() => null)
+      ])
+      
+      const retailData = retailRes?.ok ? await retailRes.json() : null
+      const foodData = foodRes?.ok ? await foodRes.json() : null
+      
+      // Merge deals: prioritize food deals (at least 2), then retail deals
+      const allDeals: any[] = []
+      
+      // Add food deals first (at least 2)
+      if (foodData?.items && foodData.items.length > 0) {
+        allDeals.push(...foodData.items.slice(0, Math.max(2, foodData.items.length)))
       }
+      
+      // Add retail deals
+      if (retailData?.coupons && retailData.coupons.length > 0) {
+        allDeals.push(...retailData.coupons)
+      }
+      
+      setDeals(allDeals.slice(0, HOME_LIMITS.DEALS))
     } catch (error) {
       console.error('Error fetching deals:', error)
     } finally {
@@ -124,21 +143,110 @@ export function HomeDealsSection() {
         <ViewMoreButton href="/deals" />
       </div>
       <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-        {deals.slice(0, HOME_LIMITS.DEALS).map((deal) => (
-          <Link
-            key={deal.id}
-            href={`/deals/${deal.source || 'unknown'}/${generateSlug(deal.title || deal.description || '')}-${deal.id}`}
-            className="block p-4 border border-gray-200 rounded-lg hover:shadow-md transition-shadow"
-          >
-            <h4 className="font-semibold text-gray-900 mb-1 line-clamp-1">{translateDealTitle(deal.title || deal.description || '')}</h4>
-            <p className="text-sm text-gray-600 line-clamp-2">{deal.description || deal.snippet}</p>
-            {deal.category && (
-              <span className="inline-block mt-2 px-2 py-1 text-xs bg-blue-50 text-blue-700 rounded">
-                {deal.category}
-              </span>
-            )}
-          </Link>
-        ))}
+        {deals.slice(0, HOME_LIMITS.DEALS).map((deal) => {
+          // Use new formatting functions (no duplication)
+          const categoryCN = getDealCategoryCN(deal)
+          const titleCN = getDealReadableTitle(deal)
+          const saveText = getDealSaveText(deal)
+          const badges = getDealBadges(deal)
+          
+          // Get image with fallback
+          const { src: imageSrc, isFallback } = getDealImage(deal)
+          
+          // Get external URL (priority: url > source_url > sourceUrl > externalUrl)
+          const externalUrl = deal.url || deal.source_url || deal.sourceUrl || deal.externalUrl || 
+            getDealExternalUrl(deal.source_url, deal.source)
+          
+          // Handle click - direct external navigation
+          const handleClick = (e: React.MouseEvent) => {
+            e.preventDefault()
+            if (externalUrl && externalUrl.startsWith('http')) {
+              window.open(externalUrl, '_blank')
+            } else {
+              // Fallback to deals page
+              window.open('/deals', '_blank')
+            }
+          }
+          
+          return (
+            <div
+              key={deal.id}
+              onClick={handleClick}
+              className="block p-4 border border-gray-200 rounded-lg hover:shadow-md transition-all hover:border-blue-300 cursor-pointer"
+            >
+              <div className="flex gap-3">
+                {/* Image (1:1 aspect ratio) - Must have image */}
+                <div className="flex-shrink-0 w-20 h-20 rounded-lg overflow-hidden bg-gray-100 relative">
+                  {isFallback ? (
+                    <img
+                      src={imageSrc}
+                      alt={titleCN}
+                      className="w-full h-full object-cover"
+                      onError={(e) => {
+                        // Final fallback to gray placeholder
+                        e.currentTarget.src = 'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMjAwIiBoZWlnaHQ9IjIwMCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48cmVjdCB3aWR0aD0iMjAwIiBoZWlnaHQ9IjIwMCIgZmlsbD0iI2YzZjRmNiIvPjwvc3ZnPg=='
+                      }}
+                    />
+                  ) : (
+                    <img
+                      src={imageSrc}
+                      alt={titleCN}
+                      className="w-full h-full object-cover"
+                      onError={(e: any) => {
+                        // Fallback to category placeholder on error
+                        const fallback = getDealImage({ category: deal.category })
+                        e.currentTarget.src = fallback.src
+                      }}
+                    />
+                  )}
+                </div>
+                
+                {/* Content - 1 line conclusion + 2 line points (no duplication) */}
+                <div className="flex-1 min-w-0">
+                  {/* Category Badge (top) */}
+                  <div className="mb-1">
+                    <span className="px-2 py-0.5 text-xs bg-blue-50 text-blue-700 rounded font-medium">
+                      {categoryCN}
+                    </span>
+                  </div>
+                  
+                  {/* Main Title - What is this (one line) */}
+                  <h4 className="font-semibold text-gray-900 mb-1 line-clamp-2 text-sm">
+                    {titleCN}
+                  </h4>
+                  
+                  {/* Save Text (only once, prominent) */}
+                  {saveText && (
+                    <p className="text-base font-bold text-green-600 mb-1">
+                      {saveText}
+                    </p>
+                  )}
+                  
+                  {/* Badges (max 2 pills) */}
+                  {badges.length > 0 && (
+                    <div className="flex flex-wrap items-center gap-1.5 text-xs text-gray-600 mt-1">
+                      {badges.map((badge, idx) => (
+                        <span
+                          key={idx}
+                          className="px-1.5 py-0.5 bg-gray-50 rounded"
+                        >
+                          {badge}
+                        </span>
+                      ))}
+                    </div>
+                  )}
+                  
+                  {/* Source (optional, small) */}
+                  {deal.source && (
+                    <p className="text-xs text-gray-400 mt-1">
+                      {getSourceName(deal.source)}
+                    </p>
+                  )}
+                </div>
+              </div>
+            </div>
+          )
+        })}
       </div>
     </div>
   )
