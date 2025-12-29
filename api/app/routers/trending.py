@@ -11,7 +11,7 @@ router = APIRouter()
 
 @router.get("", response_model=TrendingResponse)
 def get_trending(
-    source_type: Optional[str] = Query(None, description="Source type: di_li, blind, or xhs"),
+    source_type: Optional[str] = Query(None, description="Source type: di_li or blind"),
     city: Optional[str] = Query(None),
     limit: int = Query(20, ge=1, le=100),
     db: Session = Depends(get_db)
@@ -26,12 +26,6 @@ def get_trending(
         Article.url.like('%post/new-grad-2024%'),
         Article.url.like('%post/promo-2024%'),
         Article.url.like('%post/offer-2024%'),
-        Article.url.like('%explore/123%'),
-        Article.url.like('%explore/234%'),
-        Article.url.like('%explore/345%'),
-        Article.url.like('%explore/456%'),
-        Article.url.like('%explore/567%'),
-        Article.url.like('%explore/678%'),
         Article.url.like('%example.com%'),
     ]
     

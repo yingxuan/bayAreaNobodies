@@ -9,31 +9,6 @@ print("=" * 60)
 print("Updating Search Queries")
 print("=" * 60)
 
-# Disable ALL xiaohongshu queries (app no longer uses xiaohongshu)
-# Check by site_domain
-xiaohongshu_by_domain = db.query(SourceQuery).filter(
-    SourceQuery.site_domain.ilike("%xiaohongshu%")
-).all()
-
-# Check by query text (case insensitive)
-xiaohongshu_by_query = db.query(SourceQuery).filter(
-    SourceQuery.query.ilike("%xiaohongshu%")
-).all()
-
-# Check for Chinese name "小红书"
-xiaohongshu_chinese = db.query(SourceQuery).filter(
-    SourceQuery.query.ilike("%小红书%")
-).all()
-
-# Combine and deduplicate
-all_xiaohongshu = {q.id: q for q in xiaohongshu_by_domain + xiaohongshu_by_query + xiaohongshu_chinese}.values()
-
-for q in all_xiaohongshu:
-    was_enabled = q.enabled
-    q.enabled = False
-    status = "disabled" if was_enabled else "already disabled"
-    print(f"Disabling xiaohongshu query (ID {q.id}): {q.query[:70]}... [{status}]")
-
 # Disable old generic blind query
 old_blind = db.query(SourceQuery).filter(
     SourceQuery.source_type == "blind",

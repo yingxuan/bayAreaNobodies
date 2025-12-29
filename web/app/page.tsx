@@ -6,7 +6,6 @@ import Link from 'next/link'
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'
 
 export default function Home() {
-  console.log('[Home] Component rendering, activeTab:', 'wealth')
   const [activeTab, setActiveTab] = useState<'food' | 'deals' | 'wealth' | 'gossip'>('wealth')
 
   return (
@@ -67,21 +66,13 @@ function FoodTab() {
   }, [])
 
   const fetchFood = async () => {
-    console.log('[Food Feed] Starting fetch...', API_URL)
     setLoading(true)
     try {
       const url = `${API_URL}/feeds/food`
-      console.log('[Food Feed] Fetching from:', url)
       const res = await fetch(url)
-      console.log('[Food Feed] Response status:', res.status, res.statusText)
       
       if (res.ok) {
         const data = await res.json()
-        console.log('[Food Feed] Data received:', {
-          total: data.total,
-          articlesCount: data.articles?.length || 0
-        })
-        
         const articles = data.articles || []
         setArticles(articles)
       } else {
@@ -94,10 +85,7 @@ function FoodTab() {
     }
   }
 
-  console.log('[Food Tab] Render - loading:', loading, 'articles:', articles.length)
-  
   if (loading) {
-    console.log('[Food Tab] Showing loading state')
     return <div className="text-center py-8">Loading food content...</div>
   }
 
@@ -114,12 +102,6 @@ function FoodTab() {
     // YouTube video embed
     if (article.platform === 'youtube' && article.video_id) {
       const embedUrl = `https://www.youtube.com/embed/${article.video_id}?rel=0`
-      console.log('[renderMedia] Rendering YouTube video:', {
-        articleId: article.id,
-        video_id: article.video_id,
-        embedUrl,
-        title: article.title?.substring(0, 30)
-      })
       return (
         <div 
           className="mb-4 rounded-lg overflow-hidden" 
@@ -549,8 +531,6 @@ function WealthTab() {
       const res = await fetch(`${API_URL}/portfolio/db-summary`)
       if (res.ok) {
         const data = await res.json()
-        console.log('Portfolio data loaded:', data)
-        console.log('Holdings count:', data.holdings?.length)
         setPortfolioData(data)
         
         // Load intraday data lazily in background (after initial render)

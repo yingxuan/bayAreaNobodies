@@ -41,7 +41,7 @@ if count_after > count_before:
     print("\n" + "-" * 60)
     print("Recent articles by source:")
     print("-" * 60)
-    for source_type in ['di_li', 'blind', 'xhs']:
+    for source_type in ['di_li', 'blind']:
         recent = db.query(Article).filter(
             Article.source_type == source_type
         ).order_by(Article.id.desc()).limit(3).all()

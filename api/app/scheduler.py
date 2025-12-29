@@ -152,11 +152,6 @@ def process_search_query(query_obj: SourceQuery, db: Session):
                 print(f"Skipping {url}: invalid content URL (homepage/explore page)")
                 continue
             
-            # Skip xiaohongshu URLs (app no longer uses xiaohongshu)
-            if "xiaohongshu.com" in url.lower() or "xiaohongshu" in url.lower():
-                print(f"Skipping {url}: xiaohongshu is no longer used")
-                continue
-            
             # For food_radar, skip Blind URLs (we allow 1point3acres.com and huaren.us for food content)
             if query_obj.source_type == "food_radar":
                 if "teamblind.com" in url.lower():

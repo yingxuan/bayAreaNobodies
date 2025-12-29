@@ -1,6 +1,6 @@
 # Google Custom Search Engine (CSE) Setup Guide
 
-This guide will help you set up Google CSE credentials to enable real article fetching from 1point3acres, Teamblind, and Xiaohongshu.
+This guide will help you set up Google CSE credentials to enable real article fetching from 1point3acres and Teamblind.
 
 ## Quick Setup Steps
 
@@ -26,7 +26,6 @@ This guide will help you set up Google CSE credentials to enable real article fe
      ```
      1point3acres.com
      teamblind.com
-     xiaohongshu.com
      ```
    - **Name**: "Bay Area Daily Search" (or any name you prefer)
 4. Click **Create**
@@ -82,7 +81,7 @@ You should see:
 - Make sure you copied the entire ID (it's usually quite long)
 
 ### "No results returned" warning
-- Verify your CSE includes the sites: `1point3acres.com`, `teamblind.com`, `xiaohongshu.com`
+- Verify your CSE includes the sites: `1point3acres.com`, `teamblind.com`
 - Check that the sites are indexed (may take a few minutes after creation)
 - Try a different search query
 

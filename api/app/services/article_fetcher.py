@@ -18,7 +18,7 @@ def normalize_url(url: str) -> str:
         # Remove common tracking params
         tracking_params = {
             'utm_source', 'utm_medium', 'utm_campaign', 'utm_term', 'utm_content',
-            'fbclid', 'gclid', 'ref', 'source', 'campaign', 'xhsshare'
+            'fbclid', 'gclid', 'ref', 'source', 'campaign'
         }
         query_params = parse_qs(parsed.query, keep_blank_values=True)
         cleaned_params = {k: v for k, v in query_params.items() if k not in tracking_params}
