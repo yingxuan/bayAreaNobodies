@@ -518,6 +518,46 @@ def run_coupon_search():
         db.close()
 
 
+def run_deals_search():
+    """Search for deals (bank/credit card/brokerage/life) using Google CSE"""
+    from app.services.deals_service import search_and_store_deals
+    
+    db = SessionLocal()
+    try:
+        processed, skipped, quota_exceeded = search_and_store_deals(db)
+        if quota_exceeded:
+            print(f"Deals search completed: {processed} processed, {skipped} skipped due to quota")
+        else:
+            print(f"Deals search completed: {processed} queries processed")
+    except Exception as e:
+        print(f"Error in deals search: {e}")
+        import traceback
+        traceback.print_exc()
+        db.rollback()
+    finally:
+        db.close()
+
+
+def run_gossip_search():
+    """Search for gossip content using Google CSE"""
+    from app.services.gossip_service import search_and_store_gossip
+    
+    db = SessionLocal()
+    try:
+        processed, skipped, quota_exceeded = search_and_store_gossip(db)
+        if quota_exceeded:
+            print(f"Gossip search completed: {processed} processed, {skipped} skipped due to quota")
+        else:
+            print(f"Gossip search completed: {processed} queries processed")
+    except Exception as e:
+        print(f"Error in gossip search: {e}")
+        import traceback
+        traceback.print_exc()
+        db.rollback()
+    finally:
+        db.close()
+
+
 def generate_digests():
     """Generate daily digests for all users"""
     db = SessionLocal()
@@ -635,6 +675,36 @@ def start_scheduler():
         run_coupon_search,
         trigger=CronTrigger(hour=6, minute=0),
         id="coupon_search",
+        replace_existing=True
+    )
+    
+    # Deals search: 2x per day (8 AM and 2 PM)
+    scheduler.add_job(
+        run_deals_search,
+        trigger=CronTrigger(hour=8, minute=0),
+        id="deals_search_morning",
+        replace_existing=True
+    )
+    
+    scheduler.add_job(
+        run_deals_search,
+        trigger=CronTrigger(hour=14, minute=0),
+        id="deals_search_afternoon",
+        replace_existing=True
+    )
+    
+    # Gossip search: 2x per day (9 AM and 3 PM)
+    scheduler.add_job(
+        run_gossip_search,
+        trigger=CronTrigger(hour=9, minute=0),
+        id="gossip_search_morning",
+        replace_existing=True
+    )
+    
+    scheduler.add_job(
+        run_gossip_search,
+        trigger=CronTrigger(hour=15, minute=0),
+        id="gossip_search_afternoon",
         replace_existing=True
     )
     

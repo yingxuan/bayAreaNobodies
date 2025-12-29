@@ -7,7 +7,7 @@ Unified feed endpoints for the 4 main feeds:
 """
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session
-from sqlalchemy import desc, or_
+from sqlalchemy import desc, or_, and_
 from app.database import get_db
 from app.models import Article, Coupon
 from app.schemas import (
@@ -15,7 +15,7 @@ from app.schemas import (
     DealsFeedResponse, WealthFeedResponse, GossipFeedResponse
 )
 from typing import Optional, List, Dict
-from datetime import datetime
+from datetime import datetime, timezone
 import json
 
 router = APIRouter()
@@ -180,26 +180,93 @@ def get_deals_feed(
 ):
     """
     Get "羊毛" (Deals) feed - all coupons and discounts in Bay Area
-    Blends all coupons, ranked by confidence and freshness
+    Blends all coupons, ranked by score (relevance for 北美华人) and freshness
     """
-    # Show coupons from dealmoon.com, 1point3acres.com, and huaren.us
-    query = db.query(Coupon).filter(
+    from app.services.deals_service import check_deals_budget_exceeded, get_deals_usage_key
+    import os
+    import redis
+    
+    # Query: prioritize scored deals (auto-discovered), fallback to legacy coupons
+    # Only show deals from 1point3acres.com, huaren.us, and dealmoon.com (exclude YouTube)
+    query_scored = db.query(Coupon).filter(
+        Coupon.score > 0,
+        Coupon.canonical_url.isnot(None),
+        ~Coupon.source_url.ilike('%youtube.com%'),  # Exclude YouTube
+        ~Coupon.source_url.ilike('%youtu.be%'),  # Exclude YouTube short links
+        (
+            Coupon.source_url.ilike('%1point3acres.com%') |
+            Coupon.source_url.ilike('%huaren.us%') |
+            Coupon.source_url.ilike('%dealmoon.com%') |
+            Coupon.source.ilike('%1point3acres.com%') |
+            Coupon.source.ilike('%huaren.us%') |
+            Coupon.source.ilike('%dealmoon.com%')
+        )
+    )
+    
+    query_legacy = db.query(Coupon).filter(
         (
             Coupon.source_url.ilike('%dealmoon.com%') |
             Coupon.source_url.ilike('%1point3acres.com%') |
             Coupon.source_url.ilike('%huaren.us%')
-        )
+        ),
+        ~Coupon.source_url.ilike('%youtube.com%'),  # Exclude YouTube
+        ~Coupon.source_url.ilike('%youtu.be%'),  # Exclude YouTube short links
+        (Coupon.score.is_(None) | (Coupon.score == 0))  # Legacy entries
     )
     
-    # Sort by confidence (relevance) and recency (freshness)
-    coupons = query.order_by(
-        desc(Coupon.confidence),
-        desc(Coupon.created_at)
+    # Get scored deals first (ranked by score)
+    # Priority: food_fast and retail_family first, then others
+    from sqlalchemy import case
+    
+    # Create priority score: food_fast=3, retail_family=2, others=1
+    category_priority = case(
+        (Coupon.category == 'food_fast', 3),
+        (Coupon.category == 'retail_family', 2),
+        else_=1
+    )
+    
+    scored_coupons = query_scored.order_by(
+        desc(category_priority),  # Priority categories first
+        desc(Coupon.score),
+        desc(Coupon.fetched_at)
     ).limit(limit).all()
     
+    # Fill remaining slots with legacy coupons if needed
+    remaining = limit - len(scored_coupons)
+    legacy_coupons = []
+    if remaining > 0:
+        legacy_coupons = query_legacy.order_by(
+            desc(Coupon.confidence),
+            desc(Coupon.created_at)
+        ).limit(remaining).all()
+    
+    all_coupons = list(scored_coupons) + list(legacy_coupons)
+    
+    # Check data freshness
+    REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379/0")
+    redis_client = redis.from_url(REDIS_URL, decode_responses=True) if REDIS_URL else None
+    quota_exceeded = check_deals_budget_exceeded()
+    data_freshness = "stale_due_to_quota" if quota_exceeded else "fresh"
+    
+    # Get usage info if available
+    usage_info = None
+    if redis_client:
+        usage_key = get_deals_usage_key()
+        current_usage = redis_client.get(usage_key)
+        if current_usage:
+            try:
+                usage_info = {
+                    "current_usage": int(current_usage),
+                    "daily_budget": int(os.getenv("DEALS_CSE_DAILY_BUDGET", "80"))
+                }
+            except:
+                pass
+    
     return DealsFeedResponse(
-        coupons=[CouponResponse.model_validate(c) for c in coupons],
-        total=len(coupons),
+        coupons=[CouponResponse.model_validate(c) for c in all_coupons],
+        total=len(all_coupons),
+        data_freshness=data_freshness,
+        usage_info=usage_info,
         filters={}
     )
 
@@ -217,11 +284,11 @@ def get_wealth_feed(
     from datetime import timedelta
     import pytz
     
-    # Preferred bloggers (in priority order)
+    # Preferred bloggers (in priority order) - 美股博主优先
     PREFERRED_BLOGGERS = [
-        "视野环球财经",
-        "美投讲美股",
+        "美投讲美股",  # 明确提到"美股"的博主最高优先级
         "美投侃新闻",
+        "视野环球财经",
         "股市咖啡屋 Stock Cafe",
         "股市咖啡屋",
         "老李玩钱"
@@ -236,8 +303,16 @@ def get_wealth_feed(
         "投资", "股票", "股市", "投资组合", "portfolio"
     ]
     
-    # Only show wealth articles from youtube.com, published in the last 7 days
-    cutoff_time = datetime.now(pytz.UTC) - timedelta(days=7)
+    # Hong Kong stock keywords to EXCLUDE
+    HK_STOCK_KEYWORDS = [
+        "港股", "hong kong stock", "hk stock", "香港股票", "香港股市",
+        "恒生", "hsi", "hang seng", "腾讯", "tencent", "阿里巴巴", "alibaba",
+        "美团", "meituan", "小米", "xiaomi", "京东", "jd.com",
+        "港股通", "h股", "红筹", "中概股"  # 中概股可能包含港股，但先排除明显港股
+    ]
+    
+    # Only show wealth articles from youtube.com, published in the last 5 days
+    cutoff_time = datetime.now(pytz.UTC) - timedelta(days=5)
     
     query = db.query(Article).filter(
         Article.source_type == "wealth",
@@ -247,29 +322,43 @@ def get_wealth_feed(
     
     articles = query.all()
     
-    # Filter articles: must be related to US stocks
+    # Filter articles: must be related to US stocks and NOT Hong Kong stocks
     def is_us_stock_related(article):
         title = (article.title or "").lower()
         summary = (article.summary or "").lower()
         combined_text = title + " " + summary
         
+        # First check: exclude Hong Kong stocks
+        for hk_keyword in HK_STOCK_KEYWORDS:
+            if hk_keyword.lower() in combined_text:
+                return False  # Exclude if contains HK stock keywords
+        
+        # Second check: must contain US stock keywords
         for keyword in US_STOCK_KEYWORDS:
             if keyword.lower() in combined_text:
                 return True
         return False
     
-    # Filter to only US stock related articles
+    # Filter to only US stock related articles (excluding HK stocks)
     us_stock_articles = [a for a in articles if is_us_stock_related(a)]
     
-    # Separate articles by preferred bloggers
+    # Separate articles by preferred bloggers (美股博主优先)
     preferred_articles = []
     other_articles = []
+    
+    # Check if article mentions "美股" explicitly (highest priority)
+    def mentions_us_stocks_explicitly(article):
+        title = (article.title or "").lower()
+        summary = (article.summary or "").lower()
+        combined = title + " " + summary
+        return "美股" in combined or "us stock" in combined or "us stocks" in combined
     
     for article in us_stock_articles:
         title = (article.title or "").lower()
         summary = (article.summary or "").lower()
         is_preferred = False
         
+        # Check if it's from preferred blogger
         for blogger in PREFERRED_BLOGGERS:
             if blogger.lower() in title or blogger.lower() in summary:
                 is_preferred = True
@@ -280,7 +369,7 @@ def get_wealth_feed(
         else:
             other_articles.append(article)
     
-    # Sort preferred articles by blogger priority, then by freshness
+    # Sort preferred articles by: 1) explicit "美股" mention, 2) blogger priority, 3) freshness
     def get_blogger_priority(article):
         title = (article.title or "").lower()
         summary = (article.summary or "").lower()
@@ -289,24 +378,32 @@ def get_wealth_feed(
                 return idx
         return len(PREFERRED_BLOGGERS)
     
+    # Boost articles that explicitly mention "美股"
+    def get_us_stock_boost(article):
+        if mentions_us_stocks_explicitly(article):
+            return 0  # Highest priority
+        return 1  # Lower priority
+    
     preferred_articles.sort(
         key=lambda a: (
-            get_blogger_priority(a),
-            -(a.published_at.timestamp() if a.published_at else 0)
+            get_us_stock_boost(a),  # Explicit "美股" mention first
+            get_blogger_priority(a),  # Then by blogger priority
+            -(a.published_at.timestamp() if a.published_at else 0)  # Then by freshness
         )
     )
     
-    # Sort other articles by freshness and score
-    from sqlalchemy import case
+    # Sort other articles: explicit "美股" mention first, then freshness and score
     other_articles.sort(
         key=lambda a: (
-        -(a.published_at.timestamp() if a.published_at else 0),
-        -(a.final_score or 0)
-    ))
+            get_us_stock_boost(a),  # Explicit "美股" mention first
+            -(a.published_at.timestamp() if a.published_at else 0),  # Then freshness
+            -(a.final_score or 0)  # Then score
+        )
+    )
     
-    # Combine: preferred first, then others
-    all_articles = preferred_articles + other_articles
-    articles = all_articles[:limit]
+    # Only return preferred bloggers (美股财经博主)
+    # Do not include other_articles - only show videos from specified bloggers
+    articles = preferred_articles[:limit]
     
     # Convert to response format
     article_responses = []
@@ -351,18 +448,27 @@ def get_gossip_feed(
     import math
     
     # Show articles from teamblind.com, 1point3acres.com, and huaren.us
+    # Prioritize articles with gossip_score if available
+    from sqlalchemy import or_
     query = db.query(Article).filter(
-        Article.source_type.in_(["di_li", "blind"]),
-        Article.final_score > 0,
+        Article.source_type.in_(["di_li", "blind", "reddit", "gossip"]),
+        or_(
+            Article.final_score > 0,
+            and_(Article.gossip_score.isnot(None), Article.gossip_score > 0)
+        ),
         (
             Article.url.ilike('%teamblind.com%') |
             Article.url.ilike('%1point3acres.com%') |
-            Article.url.ilike('%huaren.us%')
+            Article.url.ilike('%huaren.us%') |
+            Article.url.ilike('%reddit.com%')
         )
     )
     
     # Fetch more articles than needed to calculate blended scores
+    # Sort by gossip_score first if available, then by final_score
+    from sqlalchemy import nullslast
     articles = query.order_by(
+        nullslast(desc(Article.gossip_score)),
         desc(Article.fetched_at),
         desc(Article.final_score)
     ).limit(limit * 2).all()  # Fetch 2x to have more candidates for blending
@@ -375,7 +481,8 @@ def get_gossip_feed(
         )
     
     # Calculate blended scores in Python
-    now = datetime.now()
+    from datetime import timezone
+    now = datetime.now(timezone.utc)  # Use timezone-aware datetime
     scored_articles = []
     
     for article in articles:
@@ -385,7 +492,12 @@ def get_gossip_feed(
         # 2. Freshness score - 30%
         # Articles from last 24h get full boost, decays over 7 days
         if article.fetched_at:
-            age_seconds = (now - article.fetched_at).total_seconds()
+            # Ensure fetched_at is timezone-aware
+            fetched_at = article.fetched_at
+            if fetched_at.tzinfo is None:
+                from pytz import UTC
+                fetched_at = UTC.localize(fetched_at)
+            age_seconds = (now - fetched_at).total_seconds()
             if age_seconds < 86400:  # < 24 hours
                 freshness_score = 1.0
             elif age_seconds < 604800:  # < 7 days
@@ -404,18 +516,23 @@ def get_gossip_feed(
         # 4. Source diversity - 10% (equal weight for both sources)
         diversity_score = 0.5
         
-        # Calculate blended score
+        # 5. Gossip score - boost if available (20% weight)
+        gossip_boost = (article.gossip_score or 0) * 0.2
+        
+        # Calculate blended score (incorporate gossip_score)
         blended_score = (
-            0.40 * relevance_score +
-            0.30 * freshness_score +
-            0.20 * engagement_score +
-            0.10 * diversity_score
+            0.35 * relevance_score +
+            0.25 * freshness_score +
+            0.15 * engagement_score +
+            0.10 * diversity_score +
+            gossip_boost
         )
         
         scored_articles.append((blended_score, article))
     
     # Sort by blended score (descending), then by final_score as tiebreaker
-    scored_articles.sort(key=lambda x: (x[0], x[1].final_score, x[1].fetched_at or datetime.min), reverse=True)
+    min_datetime = datetime.min.replace(tzinfo=timezone.utc)
+    scored_articles.sort(key=lambda x: (x[0], x[1].final_score, x[1].fetched_at or min_datetime), reverse=True)
     
     # Take top N articles
     top_articles = [article for _, article in scored_articles[:limit]]

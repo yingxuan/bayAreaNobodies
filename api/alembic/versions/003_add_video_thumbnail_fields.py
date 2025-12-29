@@ -1,7 +1,7 @@
 """Add video_id and thumbnail_url fields to articles
 
 Revision ID: 003_add_video_thumbnail
-Revises: 002_add_platform_field
+Revises: 001_initial
 Create Date: 2024-01-XX XX:XX:XX.XXXXXX
 
 """
@@ -11,7 +11,7 @@ import sqlalchemy as sa
 
 # revision identifiers, used by Alembic.
 revision = '003_add_video_thumbnail'
-down_revision = '002_add_platform'
+down_revision = '001_initial'
 branch_labels = None
 depends_on = None
 

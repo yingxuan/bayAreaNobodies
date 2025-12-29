@@ -46,6 +46,7 @@ class ArticleResponse(BaseModel):
     views: int
     saves: int
     final_score: float
+    gossip_score: Optional[float] = None  # 老中八卦度 score
 
     class Config:
         from_attributes = True
@@ -116,6 +117,7 @@ class CouponResponse(BaseModel):
     category: Optional[str]
     terms: Optional[str]
     confidence: float
+    chinese_friendliness_score: Optional[float] = None  # 老中友好度 score
 
     class Config:
         from_attributes = True
@@ -140,6 +142,8 @@ class FoodRadarFeedResponse(BaseModel):
 class DealsFeedResponse(BaseModel):
     coupons: List[CouponResponse]
     total: int
+    data_freshness: Optional[str] = None  # "fresh" or "stale_due_to_quota"
+    usage_info: Optional[dict] = None
     filters: dict
 
 

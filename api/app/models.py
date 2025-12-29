@@ -66,6 +66,7 @@ class Article(Base):
     freshness_score = Column(Float, default=0.0)
     search_rank_score = Column(Float, default=0.0)
     final_score = Column(Float, default=0.0, index=True)
+    gossip_score = Column(Float, default=0.0, index=True)  # 老中八卦度 score (0.0-1.0)
 
     __table_args__ = (
         Index('idx_articles_source_score', 'source_type', 'final_score'),
@@ -125,6 +126,14 @@ class Coupon(Base):
     terms = Column(Text, nullable=True)
     confidence = Column(Float, default=0.5)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
+    # Deal-specific fields for automatic discovery
+    canonical_url = Column(Text, nullable=True, index=True)  # Normalized URL (dedup)
+    content_hash = Column(String(64), nullable=True, index=True)  # Hash for dedup
+    published_at = Column(DateTime(timezone=True), nullable=True)  # Original publish date
+    score = Column(Float, default=0.0, index=True)  # Relevance score for 北美华人
+    chinese_friendliness_score = Column(Float, default=0.0, index=True)  # 老中友好度 score (0.0-1.0)
+    source = Column(String, nullable=True, index=True)  # Source domain (doctorofcredit.com, etc.)
+    fetched_at = Column(DateTime(timezone=True), server_default=func.now(), index=True)  # When we fetched it
 
 
 class Digest(Base):
@@ -138,3 +147,37 @@ class Digest(Base):
 
     user = relationship("User")
 
+
+class Restaurant(Base):
+    __tablename__ = "restaurants"
+
+    id = Column(Integer, primary_key=True, index=True)
+    place_id = Column(String, unique=True, nullable=False, index=True)  # Google Places ID
+    name = Column(String, nullable=False)
+    address = Column(Text, nullable=True)
+    phone = Column(String, nullable=True)
+    rating = Column(Float, nullable=True)
+    user_ratings_total = Column(Integer, nullable=True)
+    price_level = Column(Integer, nullable=True)  # 0-4
+    cuisine_type = Column(String, nullable=True, index=True)  # chinese, japanese, korean, vietnamese, boba
+    google_maps_url = Column(Text, nullable=True)
+    photo_url = Column(Text, nullable=True)
+    is_open_now = Column(Boolean, nullable=True)
+    lat = Column(Float, nullable=True)
+    lng = Column(Float, nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), onupdate=func.now())
+
+
+class CheckIn(Base):
+    __tablename__ = "check_ins"
+
+    id = Column(Integer, primary_key=True, index=True)
+    restaurant_id = Column(Integer, ForeignKey("restaurants.id"), nullable=False, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=True)  # Optional for anonymous check-ins
+    check_in_count = Column(Integer, default=1)  # Number of times checked in
+    last_check_in_at = Column(DateTime(timezone=True), server_default=func.now(), index=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+    restaurant = relationship("Restaurant")
+    user = relationship("User")
