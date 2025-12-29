@@ -381,14 +381,147 @@ function DealsTab() {
   )
 }
 
+// Holding Actions Component
+function HoldingActions({ ticker, currentQuantity, onAdd, onReduce, onReload }: {
+  ticker: string
+  currentQuantity: number
+  onAdd: (ticker: string, quantity: number, costBasisPerShare: number) => Promise<void>
+  onReduce: (ticker: string, quantity: number) => Promise<void>
+  onReload: () => Promise<void>
+}) {
+  const [showAddForm, setShowAddForm] = useState(false)
+  const [showReduceForm, setShowReduceForm] = useState(false)
+  const [addQuantity, setAddQuantity] = useState('')
+  const [addCostBasis, setAddCostBasis] = useState('')
+  const [reduceQuantity, setReduceQuantity] = useState('')
+
+  const handleAddSubmit = async (e: React.FormEvent) => {
+    e.preventDefault()
+    const qty = parseFloat(addQuantity)
+    const cost = parseFloat(addCostBasis)
+    if (qty > 0 && cost > 0) {
+      await onAdd(ticker, qty, cost)
+      setAddQuantity('')
+      setAddCostBasis('')
+      setShowAddForm(false)
+    }
+  }
+
+  const handleReduceSubmit = async (e: React.FormEvent) => {
+    e.preventDefault()
+    const qty = parseFloat(reduceQuantity)
+    if (qty > 0 && qty <= currentQuantity) {
+      await onReduce(ticker, qty)
+      setReduceQuantity('')
+      setShowReduceForm(false)
+    } else {
+      alert(`Quantity must be between 0 and ${currentQuantity}`)
+    }
+  }
+
+  return (
+    <div className="flex items-center space-x-2">
+      {!showAddForm && !showReduceForm ? (
+        <>
+          <button
+            onClick={() => setShowAddForm(true)}
+            className="px-2 py-1 text-xs bg-green-100 text-green-700 rounded hover:bg-green-200"
+          >
+            + 加仓
+          </button>
+          <button
+            onClick={() => setShowReduceForm(true)}
+            className="px-2 py-1 text-xs bg-red-100 text-red-700 rounded hover:bg-red-200"
+          >
+            - 减仓
+          </button>
+        </>
+      ) : showAddForm ? (
+        <form onSubmit={handleAddSubmit} className="flex items-center space-x-1">
+          <input
+            type="number"
+            step="0.01"
+            placeholder="数量"
+            value={addQuantity}
+            onChange={(e) => setAddQuantity(e.target.value)}
+            className="w-16 px-1 py-0.5 text-xs border rounded"
+            required
+          />
+          <input
+            type="number"
+            step="0.01"
+            placeholder="成本/股"
+            value={addCostBasis}
+            onChange={(e) => setAddCostBasis(e.target.value)}
+            className="w-20 px-1 py-0.5 text-xs border rounded"
+            required
+          />
+          <button
+            type="submit"
+            className="px-2 py-0.5 text-xs bg-green-600 text-white rounded hover:bg-green-700"
+          >
+            确认
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              setShowAddForm(false)
+              setAddQuantity('')
+              setAddCostBasis('')
+            }}
+            className="px-2 py-0.5 text-xs bg-gray-300 text-gray-700 rounded hover:bg-gray-400"
+          >
+            取消
+          </button>
+        </form>
+      ) : (
+        <form onSubmit={handleReduceSubmit} className="flex items-center space-x-1">
+          <input
+            type="number"
+            step="0.01"
+            placeholder="数量"
+            value={reduceQuantity}
+            onChange={(e) => setReduceQuantity(e.target.value)}
+            className="w-16 px-1 py-0.5 text-xs border rounded"
+            required
+            max={currentQuantity}
+          />
+          <button
+            type="submit"
+            className="px-2 py-0.5 text-xs bg-red-600 text-white rounded hover:bg-red-700"
+          >
+            确认
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              setShowReduceForm(false)
+              setReduceQuantity('')
+            }}
+            className="px-2 py-0.5 text-xs bg-gray-300 text-gray-700 rounded hover:bg-gray-400"
+          >
+            取消
+          </button>
+        </form>
+      )}
+    </div>
+  )
+}
+
 // 暴富 (Wealth) Tab - YouTube stock investment videos in carousel
 function WealthTab() {
   const [videos, setVideos] = useState<any[]>([])
+  const [portfolioData, setPortfolioData] = useState<any>(null)
   const [loading, setLoading] = useState(true)
+  const [portfolioLoading, setPortfolioLoading] = useState(true)
+  const [sortColumn, setSortColumn] = useState<string | null>('value')
+  const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('desc')
+  const [intradayDataCache, setIntradayDataCache] = useState<Record<string, any[]>>({})
   const videoCarouselRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
     fetchWealth()
+    loadPortfolio()
   }, [])
 
   const fetchWealth = async () => {
@@ -410,6 +543,271 @@ function WealthTab() {
     }
   }
 
+  const loadPortfolio = async () => {
+    setPortfolioLoading(true)
+    try {
+      const res = await fetch(`${API_URL}/portfolio/db-summary`)
+      if (res.ok) {
+        const data = await res.json()
+        console.log('Portfolio data loaded:', data)
+        console.log('Holdings count:', data.holdings?.length)
+        setPortfolioData(data)
+        
+        // Load intraday data lazily in background (after initial render)
+        setTimeout(() => {
+          loadIntradayDataLazily(data.holdings || [])
+        }, 1000)
+      } else {
+        console.error('Error loading portfolio:', res.status, res.statusText)
+      }
+    } catch (error) {
+      console.error('Error loading portfolio:', error)
+    } finally {
+      setPortfolioLoading(false)
+    }
+  }
+
+  const loadIntradayDataLazily = async (holdings: any[]) => {
+    // Load intraday data in batches to avoid overwhelming the API
+    const loadBatch = async (batch: any[]) => {
+      for (const holding of batch) {
+        try {
+          const res = await fetch(`${API_URL}/portfolio/intraday/${holding.ticker}`)
+          if (res.ok) {
+            const data = await res.json()
+            if (data.intraday_data && data.intraday_data.length > 0) {
+              setIntradayDataCache(prev => ({
+                ...prev,
+                [holding.ticker]: data.intraday_data
+              }))
+            }
+          }
+          // Small delay between requests
+          await new Promise(resolve => setTimeout(resolve, 200))
+        } catch (error) {
+          console.error(`Error loading intraday data for ${holding.ticker}:`, error)
+        }
+      }
+    }
+    
+    // Load in batches of 3 to avoid rate limits
+    const batchSize = 3
+    for (let i = 0; i < holdings.length; i += batchSize) {
+      const batch = holdings.slice(i, i + batchSize)
+      await loadBatch(batch)
+    }
+  }
+
+  const handleAddPosition = async (ticker: string, quantity: number, costBasisPerShare: number) => {
+    try {
+      const res = await fetch(`${API_URL}/portfolio/add-position`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          ticker: ticker,
+          quantity: quantity,
+          cost_basis_per_share: costBasisPerShare
+        })
+      })
+      if (res.ok) {
+        await loadPortfolio() // Reload portfolio
+      } else {
+        const error = await res.json()
+        alert(`Error: ${error.detail || 'Failed to add position'}`)
+      }
+    } catch (error) {
+      console.error('Error adding position:', error)
+      alert('Failed to add position')
+    }
+  }
+
+  const handleReducePosition = async (ticker: string, quantity: number) => {
+    try {
+      const res = await fetch(`${API_URL}/portfolio/reduce-position`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          ticker: ticker,
+          quantity: quantity
+        })
+      })
+      if (res.ok) {
+        await loadPortfolio() // Reload portfolio
+      } else {
+        const error = await res.json()
+        alert(`Error: ${error.detail || 'Failed to reduce position'}`)
+      }
+    } catch (error) {
+      console.error('Error reducing position:', error)
+      alert('Failed to reduce position')
+    }
+  }
+
+  const getGoogleFinanceUrl = (ticker: string) => {
+    // Google Finance URL format
+    // Try with NASDAQ first, Google will redirect if needed
+    return `https://www.google.com/finance/quote/${ticker}:NASDAQ`
+  }
+
+  const handleSort = (column: string) => {
+    if (sortColumn === column) {
+      // Toggle direction if clicking the same column
+      setSortDirection(sortDirection === 'asc' ? 'desc' : 'asc')
+    } else {
+      // Set new column and default to descending
+      setSortColumn(column)
+      setSortDirection('desc')
+    }
+  }
+
+  const getSortedHoldings = () => {
+    if (!portfolioData || !portfolioData.holdings || !sortColumn) {
+      return portfolioData?.holdings || []
+    }
+
+    const holdings = [...portfolioData.holdings]
+    holdings.sort((a: any, b: any) => {
+      let aValue: any
+      let bValue: any
+
+      switch (sortColumn) {
+        case 'ticker':
+          aValue = a.ticker
+          bValue = b.ticker
+          break
+        case 'price':
+          aValue = a.current_price || 0
+          bValue = b.current_price || 0
+          break
+        case 'quantity':
+          aValue = a.quantity
+          bValue = b.quantity
+          break
+        case 'day_gain':
+          aValue = a.day_gain !== null && a.day_gain !== undefined ? a.day_gain : -Infinity
+          bValue = b.day_gain !== null && b.day_gain !== undefined ? b.day_gain : -Infinity
+          break
+        case 'total_gain':
+          aValue = a.total_gain
+          bValue = b.total_gain
+          break
+        case 'value':
+          aValue = a.value
+          bValue = b.value
+          break
+        default:
+          return 0
+      }
+
+      // Handle string comparison
+      if (typeof aValue === 'string' && typeof bValue === 'string') {
+        return sortDirection === 'asc' 
+          ? aValue.localeCompare(bValue)
+          : bValue.localeCompare(aValue)
+      }
+
+      // Handle numeric comparison
+      if (sortDirection === 'asc') {
+        return aValue - bValue
+      } else {
+        return bValue - aValue
+      }
+    })
+
+    return holdings
+  }
+
+  const getSortIcon = (column: string) => {
+    if (sortColumn !== column) {
+      return (
+        <span className="ml-1 text-gray-400">
+          <svg className="w-4 h-4 inline" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16V4m0 0L3 8m4-4l4 4m6 0v12m0 0l4-4m-4 4l-4-4" />
+          </svg>
+        </span>
+      )
+    }
+    return sortDirection === 'asc' ? (
+      <span className="ml-1 text-blue-600">
+        <svg className="w-4 h-4 inline" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 15l7-7 7 7" />
+        </svg>
+      </span>
+    ) : (
+      <span className="ml-1 text-blue-600">
+        <svg className="w-4 h-4 inline" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+        </svg>
+      </span>
+    )
+  }
+
+  const renderIntradayChart = (holding: any, intradayData: any[] | null = null) => {
+    const data = intradayData !== null ? intradayData : (holding.intraday_data || [])
+    if (!data || data.length === 0) {
+      return (
+        <div className="w-20 h-10 flex items-center justify-center text-gray-400 text-xs">
+          N/A
+        </div>
+      )
+    }
+
+    const width = 80
+    const height = 40
+    const padding = 4
+    
+    // Extract prices
+    const prices = data.map((d: any) => d.price)
+    const minPrice = Math.min(...prices)
+    const maxPrice = Math.max(...prices)
+    const priceRange = maxPrice - minPrice || 1
+    
+    // Calculate if overall trend is up or down
+    const firstPrice = prices[0]
+    const lastPrice = prices[prices.length - 1]
+    const isPositive = lastPrice >= firstPrice
+    const color = isPositive ? '#10b981' : '#ef4444' // green or red
+    
+    // Normalize prices to chart coordinates
+    const points = prices.map((price: number, index: number) => {
+      const x = padding + (index / (prices.length - 1)) * (width - 2 * padding)
+      const y = height - padding - ((price - minPrice) / priceRange) * (height - 2 * padding)
+      return `${x},${y}`
+    }).join(' ')
+    
+    // Create area fill path
+    const areaPath = `M ${padding},${height - padding} L ${points.split(' ').map((p, i) => {
+      if (i === 0) return p.split(',')[0]
+      return p
+    }).join(' L ')} L ${width - padding},${height - padding} Z`
+    
+    return (
+      <div className="w-20 h-10">
+        <svg width={width} height={height} className="overflow-visible">
+          {/* Area fill */}
+          <path
+            d={areaPath}
+            fill={color}
+            fillOpacity="0.2"
+          />
+          {/* Line */}
+          <polyline
+            points={points}
+            fill="none"
+            stroke={color}
+            strokeWidth="1.5"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          />
+        </svg>
+      </div>
+    )
+  }
+
   const scrollCarousel = (direction: 'left' | 'right') => {
     if (videoCarouselRef.current) {
       const scrollAmount = 400
@@ -419,10 +817,199 @@ function WealthTab() {
     }
   }
 
-  if (loading) return <div className="text-center py-8">Loading investment videos...</div>
+  if (loading && portfolioLoading) return <div className="text-center py-8">Loading...</div>
 
   return (
     <div className="space-y-8">
+      {/* Portfolio Summary Section - Google Finance Style */}
+      {portfolioData && Array.isArray(portfolioData.holdings) && portfolioData.holdings.length > 0 && (
+        <div className="bg-white rounded-lg shadow-lg p-6">
+          {/* Portfolio Header */}
+          <div className="mb-6">
+            <h2 className="text-2xl font-bold mb-2">我的投资组合</h2>
+            <div className="flex items-baseline space-x-4">
+              <div>
+                <div className="text-3xl font-bold text-gray-900">
+                  ${portfolioData.total_value.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                </div>
+                <div className="text-sm text-gray-500 mt-1">
+                  {new Date().toLocaleString('zh-CN', { 
+                    year: 'numeric', 
+                    month: 'long', 
+                    day: 'numeric',
+                    hour: '2-digit',
+                    minute: '2-digit'
+                  })} UTC-8 USD
+                </div>
+              </div>
+              <div className="flex items-center space-x-2">
+                {portfolioData.day_gain >= 0 ? (
+                  <span className="text-green-600 font-semibold">↑{Math.abs(portfolioData.day_gain_percent).toFixed(2)}%</span>
+                ) : (
+                  <span className="text-red-600 font-semibold">↓{Math.abs(portfolioData.day_gain_percent).toFixed(2)}%</span>
+                )}
+                <span className={portfolioData.day_gain >= 0 ? "text-green-600" : "text-red-600"}>
+                  {portfolioData.day_gain >= 0 ? '+' : ''}${Math.abs(portfolioData.day_gain).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} Today
+                </span>
+              </div>
+            </div>
+          </div>
+
+          {/* Portfolio Metrics */}
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+            <div className="bg-gray-50 rounded-lg p-4">
+              <div className="text-sm text-gray-600 mb-1">Day Gain</div>
+              <div className={portfolioData.day_gain >= 0 ? "text-green-600 font-semibold" : "text-red-600 font-semibold"}>
+                {portfolioData.day_gain >= 0 ? '+' : ''}${Math.abs(portfolioData.day_gain).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+              </div>
+              <div className={portfolioData.day_gain_percent >= 0 ? "text-green-600 text-sm" : "text-red-600 text-sm"}>
+                ({portfolioData.day_gain_percent >= 0 ? '↑' : '↓'}{Math.abs(portfolioData.day_gain_percent).toFixed(2)}%)
+              </div>
+            </div>
+            <div className="bg-gray-50 rounded-lg p-4">
+              <div className="text-sm text-gray-600 mb-1">Total Gain</div>
+              <div className={portfolioData.total_pnl >= 0 ? "text-green-600 font-semibold" : "text-red-600 font-semibold"}>
+                {portfolioData.total_pnl >= 0 ? '+' : ''}${Math.abs(portfolioData.total_pnl).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+              </div>
+              <div className={portfolioData.total_pnl_percent >= 0 ? "text-green-600 text-sm" : "text-red-600 text-sm"}>
+                ({portfolioData.total_pnl_percent >= 0 ? '↑' : '↓'}{Math.abs(portfolioData.total_pnl_percent).toFixed(2)}%)
+              </div>
+            </div>
+            <div className="bg-gray-50 rounded-lg p-4">
+              <div className="text-sm text-gray-600 mb-1">Total Cost</div>
+              <div className="text-gray-900 font-semibold">
+                ${portfolioData.total_cost.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+              </div>
+            </div>
+          </div>
+
+          {/* Holdings Table */}
+          <div className="overflow-x-auto">
+            <table className="min-w-full divide-y divide-gray-200">
+              <thead className="bg-gray-50">
+                <tr>
+                  <th 
+                    className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100"
+                    onClick={() => handleSort('ticker')}
+                  >
+                    <div className="flex items-center">
+                      SYMBOL
+                      {getSortIcon('ticker')}
+                    </div>
+                  </th>
+                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    CHART
+                  </th>
+                  <th 
+                    className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100"
+                    onClick={() => handleSort('price')}
+                  >
+                    <div className="flex items-center">
+                      PRICE
+                      {getSortIcon('price')}
+                    </div>
+                  </th>
+                  <th 
+                    className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100"
+                    onClick={() => handleSort('quantity')}
+                  >
+                    <div className="flex items-center">
+                      QUANTITY
+                      {getSortIcon('quantity')}
+                    </div>
+                  </th>
+                  <th 
+                    className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100"
+                    onClick={() => handleSort('day_gain')}
+                  >
+                    <div className="flex items-center">
+                      DAY GAIN
+                      {getSortIcon('day_gain')}
+                    </div>
+                  </th>
+                  <th 
+                    className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100"
+                    onClick={() => handleSort('total_gain')}
+                  >
+                    <div className="flex items-center">
+                      TOTAL GAIN
+                      {getSortIcon('total_gain')}
+                    </div>
+                  </th>
+                  <th 
+                    className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100"
+                    onClick={() => handleSort('value')}
+                  >
+                    <div className="flex items-center">
+                      VALUE
+                      {getSortIcon('value')}
+                    </div>
+                  </th>
+                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    ACTIONS
+                  </th>
+                </tr>
+              </thead>
+              <tbody className="bg-white divide-y divide-gray-200">
+                {getSortedHoldings().map((holding: any, index: number) => (
+                  <tr key={index} className="hover:bg-gray-50">
+                    <td className="px-4 py-3 whitespace-nowrap">
+                      <a
+                        href={getGoogleFinanceUrl(holding.ticker)}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-blue-600 hover:text-blue-800 font-medium"
+                      >
+                        {holding.ticker}
+                      </a>
+                    </td>
+                    <td className="px-4 py-3 whitespace-nowrap">
+                      {renderIntradayChart(holding, intradayDataCache[holding.ticker] || null)}
+                    </td>
+                    <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-900">
+                      {holding.current_price ? `$${holding.current_price.toFixed(2)}` : 'N/A'}
+                    </td>
+                    <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-900">
+                      {holding.quantity.toLocaleString(undefined, { maximumFractionDigits: 3 })}
+                    </td>
+                    <td className="px-4 py-3 whitespace-nowrap text-sm">
+                      {holding.day_gain !== null && holding.day_gain !== undefined ? (
+                        <span className={holding.day_gain >= 0 ? "text-green-600" : "text-red-600"}>
+                          {holding.day_gain >= 0 ? '+' : ''}${Math.abs(holding.day_gain).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                          {' '}
+                          ({holding.day_gain_percent >= 0 ? '↑' : '↓'}{Math.abs(holding.day_gain_percent).toFixed(2)}%)
+                        </span>
+                      ) : (
+                        <span className="text-gray-400">N/A</span>
+                      )}
+                    </td>
+                    <td className="px-4 py-3 whitespace-nowrap text-sm">
+                      <span className={holding.total_gain >= 0 ? "text-green-600" : "text-red-600"}>
+                        {holding.total_gain >= 0 ? '+' : ''}${Math.abs(holding.total_gain).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                        {' '}
+                        ({holding.total_gain_percent >= 0 ? '↑' : '↓'}{Math.abs(holding.total_gain_percent).toFixed(2)}%)
+                      </span>
+                    </td>
+                    <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-900 font-medium">
+                      ${holding.value.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                    </td>
+                    <td className="px-4 py-3 whitespace-nowrap text-sm">
+                      <HoldingActions 
+                        ticker={holding.ticker}
+                        currentQuantity={holding.quantity}
+                        onAdd={handleAddPosition}
+                        onReduce={handleReducePosition}
+                        onReload={loadPortfolio}
+                      />
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
       {/* Video Carousel Section */}
       <div>
         <h2 className="text-2xl font-bold mb-4">热门投资视频</h2>

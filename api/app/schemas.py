@@ -64,6 +64,17 @@ class HoldingCreate(BaseModel):
     tags: Optional[str] = None
 
 
+class AddPositionRequest(BaseModel):
+    ticker: str
+    quantity: float
+    cost_basis_per_share: float
+
+
+class ReducePositionRequest(BaseModel):
+    ticker: str
+    quantity: float
+
+
 class HoldingResponse(BaseModel):
     id: int
     ticker: str
