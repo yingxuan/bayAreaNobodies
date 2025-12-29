@@ -1,8 +1,8 @@
 import { Metadata } from 'next'
 import { notFound } from 'next/navigation'
 import Link from 'next/link'
-import { getTechItemBySlug } from '../../../lib/techNews'
-import { SITE_METADATA } from '../../../lib/constants'
+import { getTechItemBySlug } from '../../lib/techNews'
+import { SITE_METADATA } from '../../lib/constants'
 
 type Props = {
   params: {
