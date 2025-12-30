@@ -8,8 +8,7 @@
 'use client'
 
 import { PlaceGrid } from '../PlaceGrid'
-import { EntertainmentCarousel } from '../EntertainmentCarousel'
-import { GossipCarousel } from '../GossipCarousel'
+import { EntertainmentGossipRow } from './EntertainmentGossipRow'
 
 export function LifestyleSection() {
   return (
@@ -36,21 +35,8 @@ export function LifestyleSection() {
         />
       </div>
 
-      {/* (3) Entertainment */}
-      <div>
-        <div className="flex items-center justify-between mb-2">
-          <h3 className="text-base font-bold text-gray-900">🎬 今晚追什么</h3>
-        </div>
-        <EntertainmentCarousel hideTitle={true} />
-      </div>
-
-      {/* (4) Gossip - Horizontal carousel */}
-      <div>
-        <div className="flex items-center justify-between mb-2">
-          <h3 className="text-base font-bold text-gray-900">🗣 北美八卦</h3>
-        </div>
-        <GossipCarousel hideTitle={true} />
-      </div>
+      {/* (3) & (4) Entertainment & Gossip - Two-column layout */}
+      <EntertainmentGossipRow />
     </div>
   )
 }

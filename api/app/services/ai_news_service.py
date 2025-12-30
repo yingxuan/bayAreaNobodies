@@ -9,6 +9,7 @@ from typing import List, Dict, Optional
 from datetime import datetime
 from urllib.parse import urlparse
 import hashlib
+import pytz
 
 from app.services.google_search import search_google, fetch_multiple_pages, check_budget_exceeded
 from app.services.tech_trending_service import fetch_hn_stories
@@ -116,7 +117,9 @@ def parse_time_ago(published_at: Optional[datetime]) -> str:
         if not isinstance(published_at, datetime):
             return ""
         
-        now = datetime.now(published_at.tzinfo) if hasattr(published_at, 'tzinfo') and published_at.tzinfo else datetime.now()
+        now = datetime.now(pytz.UTC)
+        if published_at.tzinfo is None:
+            published_at = pytz.UTC.localize(published_at)
         delta = now - published_at
         
         if delta.days > 0:
@@ -210,7 +213,7 @@ def fetch_ai_news_from_cse(limit: int = 15, date_restrict: str = "d1", priority_
                 seen_hashes.add(content_hash)
                 
                 # Try to extract published date from snippet or use current time
-                published_at = datetime.now()
+                published_at = datetime.now(pytz.UTC)
                 
                 all_items.append({
                     "title": title,
@@ -271,7 +274,7 @@ def fetch_ai_news_from_finnhub(limit: int = 10, range_hours: int = 24) -> List[D
                     "domain": domain,
                     "source": item.source or domain.split(".")[0].title() if domain else "Unknown",
                     "snippet": item.summary or "",
-                    "published_at": item.published_at or datetime.now(),
+                    "published_at": item.published_at or datetime.now(pytz.UTC),
                     "is_reputable": is_reputable_source(domain),
                     "ticker": ticker
                 })
@@ -311,11 +314,15 @@ def fetch_ai_news_from_hn(limit: int = 10) -> List[Dict]:
             seen_urls.add(url)
             
             # Parse created_at
-            published_at = datetime.now()
+            published_at = datetime.now(pytz.UTC)
             try:
                 if story.get("createdAt"):
                     from dateutil import parser
-                    published_at = parser.parse(story["createdAt"])
+                    parsed = parser.parse(story["createdAt"])
+                    # Ensure timezone-aware
+                    if parsed.tzinfo is None:
+                        parsed = pytz.UTC.localize(parsed)
+                    published_at = parsed
             except:
                 pass
             
@@ -351,7 +358,7 @@ def aggregate_ai_news(limit: int = 5, target_min: int = 4) -> List[Dict]:
     4. Fallback 3: Finnhub stock news (broader ticker list)
     5. Fallback 4: General CSE search (no domain restriction)
     """
-    cache_key = f"ai_news:aggregated:{datetime.now().strftime('%Y%m%d%H')}"
+    cache_key = f"ai_news:aggregated:{datetime.now(pytz.UTC).strftime('%Y%m%d%H')}"
     
     # Check cache (1 hour cache)
     if redis_client:
@@ -366,7 +373,7 @@ def aggregate_ai_news(limit: int = 5, target_min: int = 4) -> List[Dict]:
                             from dateutil import parser
                             item["published_at"] = parser.parse(item["published_at"])
                         except:
-                            item["published_at"] = datetime.now()
+                            item["published_at"] = datetime.now(pytz.UTC)
                 # Return cached items, but ensure we have at least target_min
                 if len(cached_items) >= target_min:
                     return cached_items[:limit]
@@ -440,7 +447,7 @@ def aggregate_ai_news(limit: int = 5, target_min: int = 4) -> List[Dict]:
                             "domain": domain,
                             "source": item.source or domain.split(".")[0].title() if domain else "Unknown",
                             "snippet": item.summary or "",
-                            "published_at": item.published_at or datetime.now(),
+                            "published_at": item.published_at or datetime.now(pytz.UTC),
                             "is_reputable": is_reputable_source(domain),
                             "ticker": ticker
                         })
@@ -470,9 +477,16 @@ def aggregate_ai_news(limit: int = 5, target_min: int = 4) -> List[Dict]:
         elif item.get("is_reputable"):
             score += 10
         # Recency: newer items get higher score
-        age_hours = (datetime.now() - item.get("published_at", datetime.now())).total_seconds() / 3600
+        now = datetime.now(pytz.UTC)
+        published_at = item.get("published_at", now)
+        # Ensure both datetimes are timezone-aware
+        if published_at.tzinfo is None:
+            published_at = pytz.UTC.localize(published_at)
+        if now.tzinfo is None:
+            now = pytz.UTC.localize(now)
+        age_hours = (now - published_at).total_seconds() / 3600
         score += max(0, 5 - age_hours / 6)  # Decay over 30 hours
-        return (-score, item.get("published_at", datetime.min))
+        return (-score, published_at)
     
     all_items.sort(key=rank_item)
     

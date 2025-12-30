@@ -1,7 +1,7 @@
 /**
- * Entertainment Carousel - 🎬 今晚追什么
- * YouTube latest TV shows / Variety shows
- * Target: Increase engagement and next-day open rate
+ * Entertainment List - 追剧
+ * Vertical stack of cards (max 4), NO carousel
+ * Updated: 2025-12-30
  */
 'use client'
 
@@ -19,11 +19,11 @@ type YouTubeVideo = {
   type?: 'tv' | 'variety'
 }
 
-type EntertainmentCardProps = {
+type EntertainmentItemProps = {
   video: YouTubeVideo
 }
 
-function EntertainmentCard({ video }: EntertainmentCardProps) {
+function EntertainmentItem({ video }: EntertainmentItemProps) {
   const handleClick = () => {
     // Construct YouTube URL
     const youtubeUrl = video.url || `https://www.youtube.com/watch?v=${video.videoId}`
@@ -53,10 +53,10 @@ function EntertainmentCard({ video }: EntertainmentCardProps) {
   return (
     <div
       onClick={handleClick}
-      className="flex-shrink-0 min-w-[240px] lg:min-w-[280px] bg-white rounded-lg border border-gray-200 overflow-hidden hover:shadow-md transition-all cursor-pointer snap-start"
+      className="flex gap-3 p-3 bg-white rounded-lg border border-gray-200 hover:shadow-md transition-all cursor-pointer"
     >
-      {/* Thumbnail - Fixed 16:9 aspect ratio */}
-      <div className="relative w-full aspect-video bg-gray-100">
+      {/* Thumbnail - Fixed width, 16:9 aspect ratio */}
+      <div className="relative w-40 flex-shrink-0 aspect-video bg-gray-100 rounded overflow-hidden">
         {video.thumbnail ? (
           <img
             src={video.thumbnail}
@@ -75,8 +75,8 @@ function EntertainmentCard({ video }: EntertainmentCardProps) {
         )}
       </div>
       
-      {/* Content - Reduced padding */}
-      <div className="p-3 sm:p-4">
+      {/* Content - Title and source */}
+      <div className="flex-1 min-w-0 flex flex-col justify-center">
         <h4 className="text-sm font-semibold text-gray-900 line-clamp-2 mb-1">
           {displayTitle}
         </h4>
@@ -88,11 +88,7 @@ function EntertainmentCard({ video }: EntertainmentCardProps) {
   )
 }
 
-type EntertainmentCarouselProps = {
-  hideTitle?: boolean
-}
-
-export function EntertainmentCarousel({ hideTitle = false }: EntertainmentCarouselProps = {}) {
+export function EntertainmentList() {
   const [videos, setVideos] = useState<YouTubeVideo[]>([])
   const [loading, setLoading] = useState(true)
 
@@ -142,8 +138,8 @@ export function EntertainmentCarousel({ hideTitle = false }: EntertainmentCarous
         return true
       })
 
-      // Limit to max 6 items for homepage UX
-      setVideos(allVideos.slice(0, 6))
+      // Limit to max 4 items for homepage
+      setVideos(allVideos.slice(0, 4))
     } catch (error) {
       console.error('Error fetching YouTube videos:', error)
     } finally {
@@ -153,13 +149,13 @@ export function EntertainmentCarousel({ hideTitle = false }: EntertainmentCarous
 
   if (loading) {
     return (
-      <div className="flex gap-3 overflow-x-auto scroll-smooth scrollbar-hide pb-2">
-        {[1, 2, 3, 4, 5, 6].map((i) => (
-          <div key={i} className="flex-shrink-0 min-w-[240px] lg:min-w-[280px] bg-white rounded-lg border border-gray-200 overflow-hidden">
-            <div className="w-full aspect-video bg-gray-100 animate-pulse" />
-            <div className="p-3 sm:p-4">
-              <div className="h-4 bg-gray-100 rounded animate-pulse mb-1" />
-              <div className="h-3 bg-gray-100 rounded animate-pulse w-2/3 mt-1" />
+      <div className="space-y-3">
+        {[1, 2, 3, 4].map((i) => (
+          <div key={i} className="flex gap-3 p-3 bg-white rounded-lg border border-gray-200">
+            <div className="w-40 aspect-video bg-gray-100 rounded animate-pulse flex-shrink-0" />
+            <div className="flex-1 min-w-0">
+              <div className="h-4 bg-gray-100 rounded animate-pulse mb-2" />
+              <div className="h-3 bg-gray-100 rounded animate-pulse w-2/3" />
             </div>
           </div>
         ))}
@@ -172,9 +168,9 @@ export function EntertainmentCarousel({ hideTitle = false }: EntertainmentCarous
   }
 
   return (
-    <div className="flex gap-3 overflow-x-auto scroll-smooth scrollbar-hide pb-2">
+    <div className="space-y-3">
       {videos.map((video, idx) => (
-        <EntertainmentCard key={video.videoId || idx} video={video} />
+        <EntertainmentItem key={video.videoId || idx} video={video} />
       ))}
     </div>
   )

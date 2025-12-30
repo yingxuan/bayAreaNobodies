@@ -30,8 +30,8 @@ export function TechNewsList() {
     setLoading(true)
     try {
       // Fetch AI news from aggregated sources (web-wide, not just HN)
-      // Request 6 items to ensure we get 4-6 after filtering
-      const aiNewsRes = await fetch(`${API_URL}/tech/ai-news?limit=6`).catch(() => null)
+      // Request 5 items to match right side height
+      const aiNewsRes = await fetch(`${API_URL}/tech/ai-news?limit=5`).catch(() => null)
       
       if (aiNewsRes?.ok) {
         const aiNewsData = await aiNewsRes.json()
@@ -57,9 +57,8 @@ export function TechNewsList() {
           })
         }
         
-        // Display 4-6 items (prefer 5, minimum 4)
-        // Backend should already ensure we have at least 4, but limit to 6 max for UI
-        const displayCount = Math.min(processedItems.length, 6)
+        // Display exactly 5 items to match right side height
+        const displayCount = Math.min(processedItems.length, 5)
         setNewsItems(processedItems.slice(0, displayCount))
       }
     } catch (error) {
@@ -71,10 +70,15 @@ export function TechNewsList() {
 
   if (loading) {
     return (
-      <div className="space-y-2">
-        {[1, 2, 3, 4].map((i) => (
-          <div key={i} className="h-16 bg-gray-100 rounded animate-pulse" />
-        ))}
+      <div className="flex flex-col h-full">
+        <div className="flex items-center justify-between mb-1.5 pb-1.5 border-b border-gray-200 min-h-[44px] flex-shrink-0">
+          <h3 className="text-sm font-bold text-gray-900">🔥 今日热点</h3>
+        </div>
+        <div className="flex-1 space-y-0">
+          {[1, 2, 3, 4, 5].map((i) => (
+            <div key={i} className="h-[51px] bg-gray-100 rounded animate-pulse mb-0" />
+          ))}
+        </div>
       </div>
     )
   }

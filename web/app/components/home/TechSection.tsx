@@ -17,7 +17,7 @@ export function TechSection() {
       </div>
 
       {/* News & Videos Row - 12-column grid: 7/5 split on desktop, stacked on mobile */}
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-3 sm:gap-4 items-start">
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-3 sm:gap-4 items-stretch">
         {/* Left: AI 行业要闻 - 7 columns on desktop */}
         <div className="lg:col-span-7 bg-white rounded-xl shadow-sm border border-gray-200 p-3 sm:p-4 flex flex-col">
           <TechNewsList />
