@@ -40,31 +40,68 @@ export function HomeOverview() {
     }
   }
 
-  // Generate overview line
-  const generateOverviewLine = (): string => {
-    const parts: string[] = []
+  // Generate actionable overview line with emotion and action hint
+  const generateOverviewLine = (): { text: string; icon: string } => {
+    const dayGain = portfolioData?.day_gain || 0
+    const dayGainPercent = portfolioData?.day_gain_percent || 0
+    const validRisks = riskItems.filter(r => r.title && r.title.length > 0)
+    const riskCount = validRisks.length
     
-    if (portfolioData) {
-      const dayGain = portfolioData.day_gain || 0
-      const dayGainPercent = portfolioData.day_gain_percent || 0
-      
-      if (dayGain > 0) {
-        parts.push('资产上涨')
-      } else if (dayGain < 0) {
-        parts.push('资产下跌')
+    // Determine financial status
+    let financialStatus = ''
+    let financialIcon = ''
+    if (dayGain > 0) {
+      financialStatus = '资产上涨'
+      financialIcon = '📈'
+    } else if (dayGain < 0) {
+      financialStatus = '资产回调'
+      financialIcon = '📉'
+    } else {
+      financialStatus = '资产持平'
+      financialIcon = '➡️'
+    }
+    
+    // Generate actionable message
+    if (riskCount > 0) {
+      // Has actionable items
+      if (dayGain < 0) {
+        return {
+          text: `今天${financialStatus}，但有 ${riskCount} 件事需要你今天处理`,
+          icon: financialIcon
+        }
+      } else if (riskCount >= 2) {
+        return {
+          text: `今天有 ${riskCount} 个和钱相关的事项，建议查看`,
+          icon: '⚠️'
+        }
       } else {
-        parts.push('资产持平')
+        return {
+          text: `今天有 1 件事需要处理，建议查看`,
+          icon: '✅'
+        }
+      }
+    } else {
+      // No actionable items
+      if (dayGain < 0) {
+        return {
+          text: `今天${financialStatus}，暂无紧急事项`,
+          icon: financialIcon
+        }
+      } else {
+        return {
+          text: `今天一切正常，暂无重要事项`,
+          icon: '✅'
+        }
       }
     }
-    
-    const validRisks = riskItems.filter(r => r.title && r.title.length > 0)
-    if (validRisks.length > 0) {
-      parts.push(`有 ${validRisks.length} 件需要注意的事`)
-    } else {
-      parts.push('暂无重要事项')
+  }
+
+  const handleOverviewClick = () => {
+    // Scroll to "今天必须做的 3 件事" section
+    const element = document.getElementById('today-must-do')
+    if (element) {
+      element.scrollIntoView({ behavior: 'smooth', block: 'start' })
     }
-    
-    return parts.join(' ｜ ')
   }
 
   if (loading) {
@@ -82,13 +119,28 @@ export function HomeOverview() {
     <div className="space-y-4">
       <TodayCommandBar />
       
-      {/* Overview Line */}
-      <div className="bg-white rounded-xl shadow-sm p-4">
-        <div className="text-sm text-gray-700">
-          <span className="font-medium">今日概览：</span>
-          {generateOverviewLine()}
-        </div>
-      </div>
+      {/* Overview Line - Actionable with click */}
+      {(() => {
+        const overview = generateOverviewLine()
+        return (
+          <div 
+            onClick={overview.text.includes('需要') || overview.text.includes('建议') ? handleOverviewClick : undefined}
+            className={`bg-white rounded-xl shadow-sm p-4 ${
+              overview.text.includes('需要') || overview.text.includes('建议') 
+                ? 'cursor-pointer hover:shadow-md transition-all hover:border-blue-300 border border-transparent' 
+                : ''
+            }`}
+          >
+            <div className="text-sm text-gray-700 flex items-center gap-2">
+              <span className="text-base">{overview.icon}</span>
+              <span>{overview.text}</span>
+              {(overview.text.includes('需要') || overview.text.includes('建议')) && (
+                <span className="text-xs text-blue-600 ml-auto">点击查看 →</span>
+              )}
+            </div>
+          </div>
+        )
+      })()}
     </div>
   )
 }

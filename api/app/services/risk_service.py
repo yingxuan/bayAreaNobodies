@@ -461,7 +461,11 @@ def generate_actions_with_gemini(city: str, date_str: str) -> Optional[List[Dict
         prompt = f"""【系统要求】
 你是面向旧金山湾区的资深工程师生活助理，只输出严格 JSON，不要输出多余文字。
 【用户需求】
-请给"旧金山湾区的码农"生成今天必须要做的 3 件事，要求：
+旧金山湾区的码农今天必须要做的 3 件事是什么？
+要求：
+- 与财务/税务/工作/身份/投资相关
+- 每条 ≤20 字
+- 给明确 action
 - 全中文
 - 每条都包含：title, why, action, deadline(可为空字符串), severity(high/medium/low)
 - 偏实用：税务/财务/身份/工作/生活办事相关（例如 tax harvesting、报税准备、401k rollover、HSA/FSA、RSU vest、信用卡福利、租房/保险续期等）

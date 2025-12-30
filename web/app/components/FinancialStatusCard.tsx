@@ -87,6 +87,26 @@ export function FinancialStatusCard() {
     }
   }
 
+  // Get Top 3 Movers (by absolute day_gain amount)
+  const getTopMovers = () => {
+    if (!portfolioData?.holdings || !Array.isArray(portfolioData.holdings)) {
+      return []
+    }
+    
+    const holdings = portfolioData.holdings.filter((h: any) => 
+      h.day_gain !== null && h.day_gain !== undefined && h.ticker
+    )
+    
+    // Sort by absolute day_gain (descending)
+    const sorted = [...holdings].sort((a, b) => {
+      const absA = Math.abs(a.day_gain || 0)
+      const absB = Math.abs(b.day_gain || 0)
+      return absB - absA
+    })
+    
+    return sorted.slice(0, 3)
+  }
+
   if (loading) {
     return (
       <div className="bg-white rounded-xl shadow-sm p-6 border-2 border-blue-200">
@@ -123,7 +143,7 @@ export function FinancialStatusCard() {
   return (
     <div className="bg-white rounded-xl shadow-sm p-6 border-2 border-blue-200">
       <div className="flex items-center justify-between mb-4">
-        <h2 className="text-xl font-bold text-gray-900">💰 财务状态</h2>
+        <h2 className="text-xl font-bold text-gray-900">📈 股票资产</h2>
         <Link href="/wealth" className="text-sm text-blue-600 hover:text-blue-700">
           查看详情 →
         </Link>
@@ -150,6 +170,45 @@ export function FinancialStatusCard() {
           </div>
         )}
       </div>
+
+      {/* Top Movers */}
+      {(() => {
+        const topMovers = getTopMovers()
+        if (topMovers.length === 0) return null
+        
+        return (
+          <div className="pt-4 border-t border-gray-200">
+            <div className="text-xs font-semibold text-gray-600 mb-2">📊 今日波动最大的持仓</div>
+            <div className="space-y-1.5">
+              {topMovers.map((holding: any, idx: number) => {
+                const dayGain = holding.day_gain || 0
+                const dayGainPercent = holding.day_gain_percent || 0
+                const isPositive = dayGain >= 0
+                const absGain = Math.abs(dayGain)
+                const absPercent = Math.abs(dayGainPercent)
+                
+                return (
+                  <Link
+                    key={holding.ticker || idx}
+                    href="/wealth"
+                    className="flex items-center justify-between text-sm hover:bg-gray-50 -mx-2 px-2 py-1 rounded transition-colors"
+                  >
+                    <span className="font-medium text-gray-900">{holding.ticker}</span>
+                    <div className="flex items-center gap-2">
+                      <span className={`font-medium ${isPositive ? 'text-green-600' : 'text-red-600'}`}>
+                        {isPositive ? '+' : '-'}{absPercent.toFixed(1)}%
+                      </span>
+                      <span className={`text-xs ${isPositive ? 'text-green-600' : 'text-red-600'}`}>
+                        ({isPositive ? '+' : '-'}${absGain.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })})
+                      </span>
+                    </div>
+                  </Link>
+                )
+              })}
+            </div>
+          </div>
+        )
+      })()}
 
       {/* Conclusion (no repetition of numbers) */}
       <div className="pt-4 border-t border-gray-200">

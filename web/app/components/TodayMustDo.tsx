@@ -38,10 +38,14 @@ export function TodayMustDo() {
     fetchActions()
   }, [])
 
-  const fetchActions = async () => {
+  const fetchActions = async (refresh = false) => {
     setLoading(true)
     try {
-      const res = await fetch(`${API_URL}/risk/today-actions?city=cupertino`, {
+      const url = refresh 
+        ? `${API_URL}/risk/today-actions?city=cupertino&refresh=1`
+        : `${API_URL}/risk/today-actions?city=cupertino`
+      
+      const res = await fetch(url, {
         cache: 'no-store'
       })
       
@@ -58,6 +62,10 @@ export function TodayMustDo() {
     } finally {
       setLoading(false)
     }
+  }
+
+  const handleRefresh = () => {
+    fetchActions(true)
   }
 
   if (loading) {
@@ -83,33 +91,42 @@ export function TodayMustDo() {
   ]
 
   return (
-    <div className="bg-white rounded-xl shadow-sm p-6 border-2 border-orange-200">
-      <div className="flex items-center justify-between mb-4">
-        <h2 className="text-xl font-bold text-gray-900">✅ 今天必须做的 3 件事</h2>
-        <Link href="/risk" className="text-sm text-blue-600 hover:text-blue-700">
-          查看详情 →
-        </Link>
+    <div id="today-must-do" className="bg-white rounded-lg shadow-sm p-4 border border-orange-200 h-full">
+      <div className="flex items-center justify-between mb-3">
+        <h2 className="text-base font-bold text-gray-900">✅ 今天提醒</h2>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={handleRefresh}
+            className="text-xs text-gray-600 hover:text-gray-900 px-1.5 py-0.5 rounded hover:bg-gray-100"
+            title="换一批"
+          >
+            换一批
+          </button>
+          <Link href="/risk" className="text-xs text-blue-600 hover:text-blue-700">
+            详情 →
+          </Link>
+        </div>
       </div>
 
-      <div className="space-y-3">
+      <div className="space-y-2">
         {displayItems.map((item, idx) => (
-          <div key={idx} className="flex items-start gap-3">
+          <div key={idx} className="flex items-center gap-2">
             <input
               type="checkbox"
               disabled
-              className="mt-1 w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+              className="w-3.5 h-3.5 text-blue-600 border-gray-300 rounded focus:ring-blue-500 flex-shrink-0"
             />
-            <div className="flex-1 min-w-0">
-              <div className="flex items-center gap-2 mb-1">
-                <span className="text-sm">{getSeverityIcon(item.severity)}</span>
-                <span className="font-semibold text-gray-900 text-sm line-clamp-1">
+            <div className="flex-1 min-w-0 flex items-center justify-between gap-2">
+              <div className="flex items-center gap-1.5 flex-1 min-w-0">
+                <span className="text-xs">{getSeverityIcon(item.severity)}</span>
+                <span className="font-medium text-gray-900 text-xs line-clamp-1">
                   {item.title}
                 </span>
               </div>
               {item.deadline && (
-                <div className="text-xs text-gray-500">
-                  截止：{item.deadline}
-                </div>
+                <span className="text-xs text-orange-600 font-medium flex-shrink-0">
+                  {item.deadline}
+                </span>
               )}
             </div>
           </div>
