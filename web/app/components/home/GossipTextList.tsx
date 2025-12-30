@@ -10,7 +10,7 @@ import Link from 'next/link'
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'
 
 type GossipItem = {
-  id?: number
+  id?: number | string
   title: string
   title_cn?: string
   url?: string
@@ -18,6 +18,7 @@ type GossipItem = {
   created_at?: string
   published_at?: string
   fetched_at?: string
+  reply_count?: number | null
 }
 
 function parseTimeAgo(dateStr?: string): string {
@@ -54,30 +55,24 @@ export function GossipTextList() {
   const fetchGossip = async () => {
     setLoading(true)
     try {
-      const res = await fetch(`${API_URL}/feeds/gossip?limit=10`).catch(() => null)
+      // Fetch from Huaren forum (forumid=398)
+      const res = await fetch(`${API_URL}/huaren/gossip?forumid=398&limit=10`).catch(() => null)
 
       if (res?.ok) {
         const data = await res.json()
-        const articles = data.articles || []
-        
-        // Filter for relevant sources
-        const filtered = articles.filter((a: any) => 
-          a.url?.includes('1point3acres') || 
-          a.url?.includes('huaren') ||
-          a.source_type === 'di_li' ||
-          a.source_type === 'gossip'
-        )
+        const threads = data.items || []
         
         // Map to simplified structure - target 8, max 10
-        const mapped = filtered.slice(0, 10).map((a: any) => ({
-          id: a.id,
-          title: a.title || '',
-          title_cn: a.title_cn,
-          url: a.url,
-          source: a.source || a.source_type,
-          created_at: a.created_at,
-          published_at: a.published_at,
-          fetched_at: a.fetched_at
+        const mapped = threads.slice(0, 10).map((t: any) => ({
+          id: t.id,
+          title: t.title || '',
+          title_cn: t.title, // Use same title for CN
+          url: t.url,
+          source: 'huaren',
+          created_at: t.published_at,
+          published_at: t.published_at,
+          fetched_at: t.published_at,
+          reply_count: t.reply_count
         }))
         
         setItems(mapped)
@@ -146,9 +141,15 @@ export function GossipTextList() {
               {displayTitle}
             </h4>
             
-            {/* Meta line: source + time */}
+            {/* Meta line: source + reply count + time */}
             <div className="flex items-center gap-1.5 text-xs text-gray-500">
               <span className="whitespace-nowrap">{sourceName}</span>
+              {item.reply_count !== undefined && item.reply_count !== null && (
+                <>
+                  <span>·</span>
+                  <span className="whitespace-nowrap">回复 {item.reply_count}</span>
+                </>
+              )}
               {timeAgo && (
                 <>
                   <span>·</span>
