@@ -4,7 +4,7 @@ from contextlib import asynccontextmanager
 import uvicorn
 
 from app.database import engine, Base
-from app.routers import auth, trending, articles, engagement, holdings, portfolio, stocks, coupons, digests, feeds, food, deals, deals_food, gossip, wealth, market, tech, risk, tech_trends
+from app.routers import auth, trending, articles, engagement, holdings, portfolio, stocks, coupons, digests, feeds, food, deals, deals_food, gossip, wealth, market, tech, risk, tech_trends, news
 from app.scheduler import start_scheduler, shutdown_scheduler
 
 
@@ -46,11 +46,14 @@ app.include_router(feeds.router, prefix="/feeds", tags=["feeds"])
 app.include_router(food.router, prefix="/food", tags=["food"])
 app.include_router(deals.router, prefix="/deals", tags=["deals"])
 app.include_router(deals_food.router, prefix="/deals", tags=["deals"])
+from app.routers import huaren_deals
+app.include_router(huaren_deals.router, prefix="/deals", tags=["deals"])
 app.include_router(gossip.router, prefix="/gossip", tags=["gossip"])
 app.include_router(wealth.router, prefix="/wealth", tags=["wealth"])
 app.include_router(market.router, prefix="/market", tags=["market"])
 app.include_router(tech.router, prefix="/tech", tags=["tech"])
 app.include_router(risk.router, prefix="/risk", tags=["risk"])
+app.include_router(news.router, prefix="/news", tags=["news"])
 
 # Entertainment router
 from app.routers import entertainment
@@ -62,6 +65,14 @@ app.include_router(tech_trends.router, prefix="/tech-trends", tags=["tech-trends
 # YouTube Channels router
 from app.routers import youtube_channels
 app.include_router(youtube_channels.router, prefix="/youtube-channels", tags=["youtube-channels"])
+
+# Metadata router
+from app.routers import metadata
+app.include_router(metadata.router, prefix="/metadata", tags=["metadata"])
+
+# Huaren Forum router (generic, supports any forumid)
+from app.routers import huaren_forum
+app.include_router(huaren_forum.router, prefix="/huaren", tags=["huaren"])
 
 
 @app.get("/")

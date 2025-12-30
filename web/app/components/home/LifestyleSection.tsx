@@ -13,11 +13,6 @@ import { EntertainmentGossipRow } from './EntertainmentGossipRow'
 export function LifestyleSection() {
   return (
     <div className="space-y-3">
-      {/* Section Header */}
-      <div className="flex items-center justify-between">
-        <h2 className="text-lg sm:text-xl font-bold text-gray-900">吃喝玩乐</h2>
-      </div>
-
       {/* (1) & (2) Chinese Restaurants + Boba - Side by side on desktop, stacked on mobile */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
         {/* (1) Chinese Restaurants */}

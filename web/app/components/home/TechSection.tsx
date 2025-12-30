@@ -11,11 +11,6 @@ import { TechVideoCards } from './TechVideoCards'
 export function TechSection() {
   return (
     <div className="space-y-3 sm:space-y-4">
-      {/* Section Header - Increased visual weight */}
-      <div className="flex items-center justify-between">
-        <h2 className="text-xl sm:text-2xl font-bold text-gray-900 truncate">行业新闻</h2>
-      </div>
-
       {/* News & Videos Row - 12-column grid: 7/5 split on desktop, stacked on mobile */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-3 sm:gap-4 items-stretch">
         {/* Left: AI 行业要闻 - 7 columns on desktop */}

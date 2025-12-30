@@ -12,11 +12,6 @@ import { YouTubeCarousel } from './YouTubeCarousel'
 export function WealthSection() {
   return (
     <div className="space-y-3">
-      {/* Section Header */}
-      <div className="flex items-center justify-between">
-        <h2 className="text-lg sm:text-xl font-bold text-gray-900 truncate">早日财富自由</h2>
-      </div>
-
       {/* (1) Portfolio Summary + Index Row */}
       <WealthSummaryHeader />
 
