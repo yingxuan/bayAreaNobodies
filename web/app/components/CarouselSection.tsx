@@ -56,9 +56,9 @@ export function CarouselSection({
         </div>
       )}
 
-      {/* Carousel Content */}
-      <div className="overflow-x-auto scrollbar-hide">
-        <div className="flex gap-3 pb-1">
+      {/* Carousel Content - Horizontal scroll on mobile */}
+      <div className="overflow-x-auto scrollbar-hide snap-x snap-mandatory pb-2">
+        <div className="flex gap-3 sm:gap-4">
           {children}
         </div>
       </div>

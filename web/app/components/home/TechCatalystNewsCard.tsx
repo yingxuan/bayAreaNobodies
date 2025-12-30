@@ -31,13 +31,13 @@ export function TechCatalystNewsCard() {
   const fetchNews = async () => {
     setLoading(true)
     try {
-      // Fetch tech news (limit 4 for compact display)
-      const techRes = await fetch(`${API_URL}/tech/trending?source=hn&limit=4`).catch(() => null)
+      // Fetch tech news (limit 5 for display)
+      const techRes = await fetch(`${API_URL}/tech/trending?source=hn&limit=5`).catch(() => null)
       
       if (techRes?.ok) {
         const techData = await techRes.json()
         
-        const items = (techData.items || []).slice(0, 4).map((item: any) => {
+        const items = (techData.items || []).slice(0, 5).map((item: any) => {
           // Only use Chinese conclusion/impact, not English title or fact description
           let conclusion = ''
           
@@ -120,7 +120,7 @@ export function TechCatalystNewsCard() {
           }
         }).filter((item: any) => item !== null) // Filter out nulls
         
-        setNewsItems(items.slice(0, 3)) // Max 3 items
+        setNewsItems(items.slice(0, 5)) // Max 5 items
       }
     } catch (error) {
       console.error('Error fetching tech news:', error)
@@ -131,7 +131,7 @@ export function TechCatalystNewsCard() {
 
   if (loading) {
     return (
-      <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-3 h-full flex items-center justify-center">
+      <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-3 sm:p-4 h-full flex items-center justify-center">
         <div className="text-xs text-gray-500">加载中...</div>
       </div>
     )
@@ -146,27 +146,27 @@ export function TechCatalystNewsCard() {
             <Link
               key={idx}
               href={item.url || '#'}
-              className={`block py-1.5 ${idx < newsItems.length - 1 ? 'border-b border-gray-100' : ''} hover:bg-gray-50 transition-colors`}
+              className={`block py-2 sm:py-2.5 ${idx < newsItems.length - 1 ? 'border-b border-gray-100' : ''} hover:bg-gray-50 transition-colors`}
             >
               {/* Title - Bold, max 2 lines */}
-              <h4 className="text-sm font-semibold text-gray-900 line-clamp-2 mb-0.5">
+              <h4 className="text-sm font-semibold text-gray-900 line-clamp-2 mb-1">
                 {item.title}
               </h4>
               
               {/* Source + Time + Tickers */}
-              <div className="flex items-center gap-2 text-xs text-gray-500">
+              <div className="flex items-center gap-1.5 sm:gap-2 text-xs text-gray-500 flex-wrap">
                 {item.source && (
-                  <span>{item.source}</span>
+                  <span className="whitespace-nowrap">{item.source}</span>
                 )}
                 {item.timeAgo && (
-                  <span>· {item.timeAgo}</span>
+                  <span className="whitespace-nowrap">· {item.timeAgo}</span>
                 )}
                 {item.affectedTickers && item.affectedTickers.length > 0 && (
                   <div className="flex items-center gap-1 ml-auto">
                     {item.affectedTickers.map((ticker) => (
                       <span
                         key={ticker}
-                        className="px-1.5 py-0.5 bg-blue-50 text-blue-700 rounded text-xs font-medium"
+                        className="px-1.5 py-0.5 bg-blue-50 text-blue-700 rounded text-xs font-medium whitespace-nowrap"
                       >
                         {ticker}
                       </span>

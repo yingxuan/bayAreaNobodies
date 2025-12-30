@@ -20,7 +20,11 @@ STOCK_CHANNELS = [
     "美投讲美股",
     "美投侃新闻",
     "股市咖啡屋 Stock Cafe",
-    "老李玩钱"
+    "老李玩钱",
+    "股票博主David",
+    "阳光财经",
+    "NaNa说美股",
+    "投资TALK君"
 ]
 
 # Tech channels
@@ -128,13 +132,17 @@ def search_channel_videos(
 @router.get("/stock")
 async def get_stock_analysis_videos(
     channels: Optional[str] = Query(None, description="Comma-separated channel names"),
-    limit_per_channel: int = Query(1, ge=1, le=3, description="Videos per channel")
+    limit_per_channel: int = Query(1, ge=1, le=3, description="Videos per channel (default: 1, each blogger's latest)")
 ):
     """
     Get latest videos from stock analysis channels
     Each channel returns latest 1 video by default
+    Ensures minimum 6 videos total
     """
     channel_list = channels.split(",") if channels else STOCK_CHANNELS
+    
+    # Force limit_per_channel to 1 (each blogger's latest video only)
+    limit_per_channel = 1
     
     # Check cache first
     cache_key = get_cache_key(channel_list, "stock")
@@ -142,44 +150,86 @@ async def get_stock_analysis_videos(
         cached = redis_client.get(cache_key)
         if cached:
             try:
-                return json.loads(cached)
+                cached_data = json.loads(cached)
+                # Ensure we have at least 6 videos
+                if cached_data.get("items") and len(cached_data["items"]) >= 6:
+                    return cached_data
             except:
                 pass
     
     try:
         all_videos = []
+        channel_video_map = {}  # Track videos per channel
         
-        # Fetch from each channel
+        # Fetch from each channel (1 video per channel)
         for channel in channel_list:
-            videos = search_channel_videos(channel.strip(), max_results=limit_per_channel)
-            all_videos.extend(videos)
+            videos = search_channel_videos(channel.strip(), max_results=1)
+            if videos:
+                channel_video_map[channel] = videos
+                all_videos.extend(videos)
+        
+        # If we have less than 6 videos, try to get more from channels that have videos
+        min_videos_required = 6
+        if len(all_videos) < min_videos_required:
+            # Try to get additional videos from channels that successfully returned videos
+            successful_channels = list(channel_video_map.keys())
+            additional_needed = min_videos_required - len(all_videos)
+            
+            # Try to get one more video from each successful channel until we have enough
+            for channel in successful_channels:
+                if len(all_videos) >= min_videos_required:
+                    break
+                # Try to get one more video (but still limit to 2 max per channel)
+                additional_videos = search_channel_videos(channel.strip(), max_results=2)
+                # Filter out videos we already have
+                existing_ids = {v["videoId"] for v in all_videos}
+                for video in additional_videos:
+                    if video["videoId"] not in existing_ids:
+                        all_videos.append(video)
+                        existing_ids.add(video["videoId"])
+                        if len(all_videos) >= min_videos_required:
+                            break
+        
+        # Remove duplicates by videoId
+        seen = set()
+        unique_videos = []
+        for video in all_videos:
+            if video["videoId"] not in seen:
+                seen.add(video["videoId"])
+                unique_videos.append(video)
+        
+        # Ensure we have at least 6 videos (or as many as available)
+        final_videos = unique_videos[:max(min_videos_required, len(unique_videos))]
         
         # If we have results, cache them
-        if all_videos and redis_client:
+        if final_videos and redis_client:
             # Cache for 6 hours
             redis_client.setex(cache_key, 6 * 3600, json.dumps({
-                "items": all_videos,
+                "items": final_videos,
                 "channels": channel_list,
-                "total": len(all_videos),
+                "total": len(final_videos),
                 "cached_at": datetime.now().isoformat(),
                 "dataSource": "youtube"
             }))
         
-        if all_videos:
+        if final_videos:
             return {
-                "items": all_videos,
+                "items": final_videos,
                 "channels": channel_list,
-                "total": len(all_videos),
+                "total": len(final_videos),
                 "dataSource": "youtube"
             }
     except Exception as e:
         print(f"Error fetching stock analysis videos: {e}")
+        import traceback
+        traceback.print_exc()
     
-    # Fallback to mock data
+    # Fallback to mock data (ensure at least 6 items)
+    mock_items = MOCK_STOCK_VIDEOS * 6  # Repeat mock data to reach 6
     return {
-        "items": MOCK_STOCK_VIDEOS,
+        "items": mock_items[:6],
         "channels": channel_list,
-        "total": len(MOCK_STOCK_VIDEOS),
+        "total": 6,
         "dataSource": "mock"
     }
 

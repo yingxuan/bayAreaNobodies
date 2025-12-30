@@ -4,7 +4,7 @@
  */
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import Link from 'next/link'
 import { StandardCard } from './StandardCard'
 
@@ -26,9 +26,10 @@ type YouTubeCarouselProps = {
   limit?: number
 }
 
-export function YouTubeCarousel({ category, title, viewMoreHref, limit = 3 }: YouTubeCarouselProps) {
+export function YouTubeCarousel({ category, title, viewMoreHref, limit }: YouTubeCarouselProps) {
   const [videos, setVideos] = useState<YouTubeVideo[]>([])
   const [loading, setLoading] = useState(true)
+  const scrollRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
     fetchVideos()
@@ -39,6 +40,7 @@ export function YouTubeCarousel({ category, title, viewMoreHref, limit = 3 }: Yo
     try {
       let endpoint = ''
       if (category === 'stock') {
+        // Stock: each blogger's latest 1 video, minimum 6 videos total
         endpoint = `/youtube-channels/stock?limit_per_channel=1`
       } else {
         endpoint = `/youtube-channels/tech?limit_per_channel=3`
@@ -57,7 +59,9 @@ export function YouTubeCarousel({ category, title, viewMoreHref, limit = 3 }: Yo
           url: item.url || `https://www.youtube.com/watch?v=${item.videoId}`
         }))
         
-        if (limit) {
+        // For stock videos, show all available (no limit)
+        // For other categories, apply limit if specified
+        if (limit && category !== 'stock') {
           videoList = videoList.slice(0, limit)
         }
         
@@ -99,65 +103,109 @@ export function YouTubeCarousel({ category, title, viewMoreHref, limit = 3 }: Yo
     )
   }
 
+  const scroll = (direction: 'left' | 'right') => {
+    if (scrollRef.current) {
+      // Calculate scroll amount: card width + gap
+      // Mobile: 140px + 8px (gap-2) = 148px
+      // Desktop: 160px + 12px (sm:gap-3) = 172px
+      const isMobile = window.innerWidth < 640
+      const cardWidth = isMobile ? 140 : 160
+      const gap = isMobile ? 8 : 12
+      const scrollAmount = cardWidth + gap
+      
+      scrollRef.current.scrollBy({
+        left: direction === 'left' ? -scrollAmount : scrollAmount,
+        behavior: 'smooth'
+      })
+    }
+  }
+
   // Don't render if no videos (empty sections are worse than missing sections)
   if (videos.length === 0) {
     return null
   }
 
   return (
-    <StandardCard title={title} viewMoreHref={viewMoreHref}>
+    <div className="relative w-full max-w-full">
+      {/* Left scroll button - Desktop only */}
+      <button
+        onClick={() => scroll('left')}
+        className="absolute left-0 top-1/2 -translate-y-1/2 z-20 bg-white rounded-full shadow-md p-2 hover:bg-gray-100 transition-colors hidden sm:flex items-center justify-center"
+        aria-label="Scroll left"
+      >
+        <svg className="w-5 h-5 text-gray-700" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+        </svg>
+      </button>
 
-      {/* Carousel - Fixed height, horizontal scroll, max 3 videos */}
-      <div className="flex-1 overflow-x-auto overflow-y-hidden pb-1 scrollbar-hide">
-        <div className="flex gap-2 items-stretch h-[140px]">
-          {videos.map((video) => (
-            <div
-              key={video.videoId}
-              onClick={() => handleVideoClick(video)}
-              className="flex-shrink-0 w-36 h-[140px] bg-white rounded-lg border border-gray-200 overflow-hidden hover:shadow-md transition-all cursor-pointer flex flex-col"
-            >
-              {/* Thumbnail - Fixed height, aligned */}
-              <div className="relative w-full h-20 bg-gray-100 flex-shrink-0">
-                {video.thumbnail ? (
-                  <img
-                    src={video.thumbnail}
-                    alt={video.title}
-                    className="w-full h-full object-cover"
-                    onError={(e) => {
-                      e.currentTarget.src = fallbackThumbnail
-                    }}
-                  />
-                ) : (
-                  <img
-                    src={fallbackThumbnail}
-                    alt={video.title}
-                    className="w-full h-full object-cover"
-                  />
-                )}
-                {/* Duration badge */}
-                {video.duration && video.duration !== 'N/A' && (
-                  <div className="absolute bottom-1 right-1 bg-black/70 text-white text-xs px-1.5 py-0.5 rounded">
-                    {video.duration}
-                  </div>
-                )}
+      {/* Right scroll button - Desktop only */}
+      <button
+        onClick={() => scroll('right')}
+        className="absolute right-0 top-1/2 -translate-y-1/2 z-20 bg-white rounded-full shadow-md p-2 hover:bg-gray-100 transition-colors hidden sm:flex items-center justify-center"
+        aria-label="Scroll right"
+      >
+        <svg className="w-5 h-5 text-gray-700" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+        </svg>
+      </button>
+
+      <StandardCard title={title} viewMoreHref={viewMoreHref} className="w-full max-w-full">
+        {/* Carousel - Fixed height, horizontal scroll */}
+        {/* CRITICAL FIX: ref must be on the element with overflow-x-auto */}
+        <div
+          ref={scrollRef}
+          className="flex-1 overflow-x-auto overflow-y-hidden pb-2 scrollbar-hide snap-x snap-mandatory"
+        >
+          <div className="flex gap-2 sm:gap-3 items-stretch h-[140px] sm:h-[160px]">
+            {videos.map((video) => (
+              <div
+                key={video.videoId}
+                onClick={() => handleVideoClick(video)}
+                className="flex-shrink-0 min-w-[140px] sm:min-w-[160px] w-36 sm:w-40 h-[140px] sm:h-[160px] bg-white rounded-lg border border-gray-200 overflow-hidden hover:shadow-md transition-all cursor-pointer flex flex-col snap-start"
+              >
+                {/* Thumbnail - Fixed height, aligned */}
+                <div className="relative w-full h-20 bg-gray-100 flex-shrink-0">
+                  {video.thumbnail ? (
+                    <img
+                      src={video.thumbnail}
+                      alt={video.title}
+                      className="w-full h-full object-cover"
+                      onError={(e) => {
+                        e.currentTarget.src = fallbackThumbnail
+                      }}
+                    />
+                  ) : (
+                    <img
+                      src={fallbackThumbnail}
+                      alt={video.title}
+                      className="w-full h-full object-cover"
+                    />
+                  )}
+                  {/* Duration badge */}
+                  {video.duration && video.duration !== 'N/A' && (
+                    <div className="absolute bottom-1 right-1 bg-black/70 text-white text-xs px-1.5 py-0.5 rounded">
+                      {video.duration}
+                    </div>
+                  )}
+                </div>
+                
+                {/* Content - Fixed height, aligned */}
+                <div className="p-1.5 flex-1 flex flex-col min-h-[60px]">
+                  <h4 className="text-xs font-semibold text-gray-900 line-clamp-2 mb-0.5">
+                    {video.title}
+                  </h4>
+                  {video.channelTitle && (
+                    <div className="text-xs text-gray-500 line-clamp-1 mt-auto">
+                      {video.channelTitle}
+                    </div>
+                  )}
+                </div>
               </div>
-              
-              {/* Content - Fixed height, aligned */}
-              <div className="p-1.5 flex-1 flex flex-col min-h-[60px]">
-                <h4 className="text-xs font-semibold text-gray-900 line-clamp-2 mb-0.5">
-                  {video.title}
-                </h4>
-                {video.channelTitle && (
-                  <div className="text-xs text-gray-500 line-clamp-1 mt-auto">
-                    {video.channelTitle}
-                  </div>
-                )}
-              </div>
-            </div>
-          ))}
+            ))}
+          </div>
         </div>
-      </div>
-    </StandardCard>
+      </StandardCard>
+    </div>
   )
 }
 

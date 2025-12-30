@@ -7,9 +7,55 @@ from app.auth import get_current_user
 from app.services.stock_service import get_stock_price, get_stock_daily_trend, get_stock_intraday_data, get_portfolio_advice
 from typing import List, Dict, Optional
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from datetime import datetime
 import os
+import redis
+import json
 
 router = APIRouter()
+
+# Redis client for storing year-start portfolio value
+REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379/0")
+redis_client = redis.from_url(REDIS_URL, decode_responses=True) if REDIS_URL else None
+
+def get_year_start_value_key(user_id: int) -> str:
+    """Get Redis key for year-start portfolio value"""
+    current_year = datetime.now().year
+    return f"portfolio:year_start_value:{user_id}:{current_year}"
+
+def get_or_set_year_start_value(user_id: int, current_value: float) -> Optional[float]:
+    """
+    Get year-start portfolio value from Redis, or calculate it if not exists
+    Returns the year-start value for YTD% calculation
+    
+    If year_start_value is not set, we'll calculate it backwards from current_value
+    assuming the actual YTD% should be calculated from a known ratio.
+    For now, if not set, we'll use current_value (YTD% = 0%)
+    """
+    if not redis_client:
+        return None
+    
+    key = get_year_start_value_key(user_id)
+    cached = redis_client.get(key)
+    
+    if cached:
+        try:
+            return float(cached)
+        except:
+            pass
+    
+    # If not set, we need to calculate it from current_value
+    # If user says actual YTD% is 30% but we're showing 39.04%,
+    # we can calculate: year_start_value = current_value / (1 + actual_ytd%/100)
+    # But we don't know the actual YTD% here, so we'll set it to current_value initially
+    # This means YTD% will be 0% until user sets the correct year-start value
+    
+    # For now, set to current_value (will result in YTD% = 0%)
+    # User should call /set-year-start-value endpoint to set the correct value
+    # Or we can calculate it: if current_value = X and YTD% should be 30%,
+    # then year_start_value = X / 1.30
+    redis_client.set(key, str(current_value))
+    return current_value
 
 
 @router.get("/summary", response_model=PortfolioSummary)
@@ -337,6 +383,18 @@ def get_db_portfolio_summary(db: Session = Depends(get_db)):
     total_pnl_percent = (total_pnl / total_cost * 100) if total_cost > 0 else 0
     day_gain_percent = (total_day_gain / total_value * 100) if total_value > 0 else 0
     
+    # Calculate YTD%: (current_value - year_start_value) / year_start_value * 100
+    # Get year-start value from Redis (or set it if first time)
+    user_id = default_user.id if default_user else 0
+    year_start_value = get_or_set_year_start_value(user_id, total_value)
+    
+    # Calculate YTD%
+    if year_start_value and year_start_value > 0:
+        ytd_percent = ((total_value - year_start_value) / year_start_value * 100)
+    else:
+        # Fallback: use total_pnl_percent as approximation (not accurate)
+        ytd_percent = total_pnl_percent
+    
     return {
         "total_cost": total_cost,
         "total_value": total_value,
@@ -344,8 +402,42 @@ def get_db_portfolio_summary(db: Session = Depends(get_db)):
         "total_pnl_percent": total_pnl_percent,
         "day_gain": total_day_gain,
         "day_gain_percent": day_gain_percent,
+        "ytd_percent": ytd_percent,  # Accurate YTD% if year_start_value is set correctly
         "holdings": holdings_data
     }
+
+
+@router.post("/set-year-start-value")
+def set_year_start_value(
+    year_start_value: float,
+    db: Session = Depends(get_db)
+):
+    """
+    Set the year-start portfolio value for accurate YTD% calculation
+    This should be the portfolio value on January 1st of the current year
+    """
+    try:
+        default_user = get_or_create_default_user(db)
+        if not default_user:
+            raise HTTPException(status_code=404, detail="User not found")
+        
+        user_id = default_user.id
+        key = get_year_start_value_key(user_id)
+        
+        if redis_client:
+            redis_client.set(key, str(year_start_value))
+            return {
+                "success": True,
+                "year_start_value": year_start_value,
+                "message": "Year-start value set successfully"
+            }
+        else:
+            return {
+                "success": False,
+                "message": "Redis not available"
+            }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error setting year-start value: {str(e)}")
 
 
 @router.get("/intraday/{ticker}")

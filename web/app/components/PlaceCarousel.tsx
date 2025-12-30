@@ -5,7 +5,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { CarouselSection } from './CarouselSection'
+import { SharedCarousel } from './SharedCarousel'
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'
 
@@ -34,7 +34,7 @@ function PlaceCard({ place }: PlaceCardProps) {
   return (
     <div
       onClick={handleClick}
-      className="flex-shrink-0 w-48 bg-white rounded-lg border border-gray-200 overflow-hidden hover:shadow-md transition-all cursor-pointer"
+      className="flex-shrink-0 min-w-[240px] sm:min-w-[260px] bg-white rounded-lg border border-gray-200 overflow-hidden hover:shadow-md transition-all cursor-pointer snap-start"
     >
       {/* Image */}
       <div className="relative w-full h-32 bg-gray-100">
@@ -95,7 +95,7 @@ export function PlaceCarousel({ title, subtitle, cuisineType, viewMoreHref }: Pl
     fetchPlaces()
   }, [])
 
-  const fetchPlaces = async (shuffle = false) => {
+  const fetchPlaces = async () => {
     setLoading(true)
     try {
       // Get user location (fallback to Cupertino)
@@ -119,13 +119,7 @@ export function PlaceCarousel({ title, subtitle, cuisineType, viewMoreHref }: Pl
 
       if (res?.ok) {
         const data = await res.json()
-        let restaurants = data.restaurants || []
-        
-        if (shuffle) {
-          // Shuffle array
-          restaurants = [...restaurants].sort(() => Math.random() - 0.5)
-        }
-        
+        const restaurants = (data.restaurants || []).slice(0, 6) // Limit to 6 items for UX
         setPlaces(restaurants)
       }
     } catch (error) {
@@ -135,17 +129,13 @@ export function PlaceCarousel({ title, subtitle, cuisineType, viewMoreHref }: Pl
     }
   }
 
-  const handleRefresh = () => {
-    fetchPlaces(true)
-  }
-
   if (loading) {
     return (
-      <CarouselSection title={title} viewMoreHref={viewMoreHref}>
+      <SharedCarousel cardWidth={240} gap={12} maxVisible={6}>
         {[1, 2, 3, 4].map((i) => (
-          <div key={i} className="flex-shrink-0 w-48 h-40 bg-gray-100 rounded-lg animate-pulse" />
+          <div key={i} className="flex-shrink-0 min-w-[240px] sm:min-w-[260px] h-40 bg-gray-100 rounded-lg animate-pulse snap-start" />
         ))}
-      </CarouselSection>
+      </SharedCarousel>
     )
   }
 
@@ -154,16 +144,11 @@ export function PlaceCarousel({ title, subtitle, cuisineType, viewMoreHref }: Pl
   }
 
   return (
-    <CarouselSection
-      title={title}
-      viewMoreHref={viewMoreHref}
-      onRefresh={handleRefresh}
-      showRefresh={true}
-    >
+    <SharedCarousel cardWidth={240} gap={12} maxVisible={6}>
       {places.map((place, idx) => (
         <PlaceCard key={place.id || place.place_id || idx} place={place} />
       ))}
-    </CarouselSection>
+    </SharedCarousel>
   )
 }
 

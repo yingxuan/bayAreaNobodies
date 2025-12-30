@@ -1,15 +1,9 @@
 import { Metadata } from 'next'
 import { TabNavigation } from './components/TabNavigation'
-import { FinancialSummaryBar } from './components/home/FinancialSummaryBar'
-import { TechCatalystNewsCard } from './components/home/TechCatalystNewsCard'
-import { StockAnalysisRow } from './components/home/StockAnalysisRow'
-import { YouTubeCarousel } from './components/home/YouTubeCarousel'
-import { CollapsibleSection } from './components/home/CollapsibleSection'
-import { TodayRemindersSection } from './components/home/TodayRemindersSection'
-import { PlaceCarousel } from './components/PlaceCarousel'
-import { DealsCarousel } from './components/DealsCarousel'
-import { EntertainmentCarousel } from './components/EntertainmentCarousel'
-import { GossipCarousel } from './components/GossipCarousel'
+import { WealthSection } from './components/home/WealthSection'
+import { TechSection } from './components/home/TechSection'
+import { LifestyleSection } from './components/home/LifestyleSection'
+import { DealsSection } from './components/home/DealsSection'
 import { SITE_METADATA } from './lib/constants'
 
 export const metadata: Metadata = {
@@ -43,64 +37,18 @@ export default function Home() {
   return (
     <div className="min-h-screen bg-gray-50">
       <TabNavigation activeTab="home" />
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-3 space-y-3">
-        {/* (1) Financial Summary Bar - Single Banner (Full Width, <= 64px) */}
-        <FinancialSummaryBar />
+      <div className="mx-auto max-w-6xl px-3 sm:px-4 py-3 sm:py-4 space-y-3">
+        {/* Section 1: 早日财富自由 */}
+        <WealthSection />
 
-        {/* (2) Today Reminders - Collapsible Section */}
-        <CollapsibleSection title="⚠️ 今天必须做的事" defaultCollapsed={true}>
-          <TodayRemindersSection />
-        </CollapsibleSection>
+        {/* Section 2: 行业新闻 */}
+        <TechSection />
 
-        {/* (4) News & Videos Row - Secondary Priority (6/6 layout) */}
-        <div className="grid grid-cols-12 gap-3">
-          {/* Left: Tech News (Text-only, no thumbnails) */}
-          <div className="col-span-12 lg:col-span-6 flex">
-            <TechCatalystNewsCard />
-          </div>
+        {/* Section 3: 吃喝玩乐 */}
+        <LifestyleSection />
 
-          {/* Right: Tech Videos (Max 3 thumbnails) */}
-          <div className="col-span-12 lg:col-span-6 flex">
-            <YouTubeCarousel
-              category="tech"
-              title="📺 科技新闻解读"
-              viewMoreHref="/videos/tech"
-              limit={3}
-            />
-          </div>
-        </div>
-
-        {/* (5) Stock Analysis Videos Row - Secondary Priority (6/6 layout) */}
-        <StockAnalysisRow />
-
-        {/* (6-9) Lifestyle Content - Tertiary Priority (Collapsed by default) */}
-        <CollapsibleSection title="🍜 吃点好的" defaultCollapsed={true}>
-          <PlaceCarousel
-            title=""
-            cuisineType="chinese"
-            viewMoreHref="/food?cuisine_type=chinese"
-          />
-        </CollapsibleSection>
-
-        <CollapsibleSection title="🧋 肥宅快乐水" defaultCollapsed={true}>
-          <PlaceCarousel
-            title=""
-            cuisineType="boba"
-            viewMoreHref="/food?cuisine_type=boba"
-          />
-        </CollapsibleSection>
-
-        <CollapsibleSection title="💰 遍地羊毛" defaultCollapsed={true}>
-          <DealsCarousel />
-        </CollapsibleSection>
-
-        <CollapsibleSection title="🎬 今晚追什么" defaultCollapsed={true}>
-          <EntertainmentCarousel hideTitle={true} />
-        </CollapsibleSection>
-
-        <CollapsibleSection title="🗣 北美八卦" defaultCollapsed={true}>
-          <GossipCarousel hideTitle={true} />
-        </CollapsibleSection>
+        {/* Section 4: 遍地羊毛 */}
+        <DealsSection />
       </div>
     </div>
   )

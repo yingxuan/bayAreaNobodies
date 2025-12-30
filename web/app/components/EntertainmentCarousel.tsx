@@ -6,7 +6,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { CarouselSection } from './CarouselSection'
+import { SharedCarousel } from './SharedCarousel'
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'
 
@@ -54,10 +54,10 @@ function EntertainmentCard({ video }: EntertainmentCardProps) {
   return (
     <div
       onClick={handleClick}
-      className="flex-shrink-0 w-40 bg-white rounded-lg border border-gray-200 overflow-hidden hover:shadow-md transition-all cursor-pointer"
+      className="flex-shrink-0 min-w-[240px] sm:min-w-[260px] bg-white rounded-lg border border-gray-200 overflow-hidden hover:shadow-md transition-all cursor-pointer snap-start"
     >
       {/* Thumbnail */}
-      <div className="relative w-full h-56 bg-gray-100">
+      <div className="relative w-full h-32 bg-gray-100">
         {video.thumbnail ? (
           <img
             src={video.thumbnail}
@@ -77,8 +77,8 @@ function EntertainmentCard({ video }: EntertainmentCardProps) {
       </div>
       
       {/* Content */}
-      <div className="p-2">
-        <h4 className="text-xs font-semibold text-gray-900 line-clamp-2 mb-1">
+      <div className="p-3">
+        <h4 className="text-sm font-semibold text-gray-900 line-clamp-2 mb-1.5">
           {displayTitle}
         </h4>
         <div className="text-xs text-gray-600 line-clamp-1">
@@ -101,7 +101,7 @@ export function EntertainmentCarousel({ hideTitle = false }: EntertainmentCarous
     fetchVideos()
   }, [])
 
-  const fetchVideos = async (shuffle = false) => {
+  const fetchVideos = async () => {
     setLoading(true)
     try {
       // Fetch both TV and Variety shows
@@ -143,11 +143,8 @@ export function EntertainmentCarousel({ hideTitle = false }: EntertainmentCarous
         return true
       })
 
-      if (shuffle) {
-        allVideos = [...allVideos].sort(() => Math.random() - 0.5)
-      }
-
-      setVideos(allVideos.slice(0, 12))
+      // Limit to 6 items for homepage UX
+      setVideos(allVideos.slice(0, 6))
     } catch (error) {
       console.error('Error fetching YouTube videos:', error)
     } finally {
@@ -155,21 +152,19 @@ export function EntertainmentCarousel({ hideTitle = false }: EntertainmentCarous
     }
   }
 
-  const handleRefresh = () => {
-    fetchVideos(true)
-  }
-
   if (loading) {
     return (
-      <CarouselSection 
-        title={hideTitle ? "" : "🎬 今晚追什么"} 
-        subtitle={hideTitle ? undefined : "来自 YouTube · 最新电视剧 / 综艺"}
-        viewMoreHref="https://www.youtube.com"
-      >
+      <SharedCarousel cardWidth={240} gap={12} maxVisible={6}>
         {[1, 2, 3, 4, 5, 6].map((i) => (
-          <div key={i} className="flex-shrink-0 w-40 h-64 bg-gray-100 rounded-lg animate-pulse" />
+          <div key={i} className="flex-shrink-0 min-w-[240px] sm:min-w-[260px] bg-white rounded-lg border border-gray-200 overflow-hidden">
+            <div className="w-full h-32 bg-gray-100 animate-pulse" />
+            <div className="p-3">
+              <div className="h-4 bg-gray-100 rounded animate-pulse mb-2" />
+              <div className="h-3 bg-gray-100 rounded animate-pulse w-2/3" />
+            </div>
+          </div>
         ))}
-      </CarouselSection>
+      </SharedCarousel>
     )
   }
 
@@ -178,17 +173,11 @@ export function EntertainmentCarousel({ hideTitle = false }: EntertainmentCarous
   }
 
   return (
-    <CarouselSection
-      title={hideTitle ? "" : "🎬 今晚追什么"}
-      subtitle={hideTitle ? undefined : "来自 YouTube · 最新电视剧 / 综艺"}
-      viewMoreHref="https://www.youtube.com"
-      onRefresh={handleRefresh}
-      showRefresh={true}
-    >
+    <SharedCarousel cardWidth={240} gap={12} maxVisible={6}>
       {videos.map((video, idx) => (
         <EntertainmentCard key={video.videoId || idx} video={video} />
       ))}
-    </CarouselSection>
+    </SharedCarousel>
   )
 }
 
