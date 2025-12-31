@@ -14,6 +14,7 @@ from app.services.tech_trending_service import fetch_hn_stories
 from app.services.news_blacklist import should_blacklist, is_big_tech_related
 from app.services.news_relevance_scorer import score_news_item, rank_news_items
 from app.services.news_summarizer import get_or_generate_summary
+from app.services.news_judgment_service import get_cached_or_judge_batch, prefilter_blacklist
 
 REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379/0")
 redis_client = redis.from_url(REDIS_URL, decode_responses=True) if REDIS_URL else None
@@ -165,38 +166,49 @@ def aggregate_industry_news(target_count: int = 5, min_count: int = 4) -> List[D
     # Deduplicate
     deduplicated = deduplicate_items(all_raw_items)
     
-    # Filter and score (start with min_score=30)
+    # Filter and score (start with min_score=30) - basic relevance filtering
     scored_items = filter_and_score_items(deduplicated, min_score=30)
     
     # If not enough items, relax filter
     if len(scored_items) < min_count:
         scored_items = filter_and_score_items(deduplicated, min_score=20)
     
-    # Take top items
-    selected = scored_items[:target_count]
+    # NEW STEP: ONE-CALL Gemini batch judgment pipeline
+    # 1. Pre-filter hard blacklist keywords (EN + ZH)
+    # 2. Take top 30-60 candidates
+    # 3. Call Gemini ONCE for batch judgment (or get from cache)
+    # 4. Returns dict with items[] (max 5), overall_brief_zh, etc.
     
-    # Generate summaries for selected items
+    print(f"Pre-filtering {len(scored_items)} scored items with hard blacklist...")
+    prefiltered = prefilter_blacklist(scored_items)
+    print(f"After pre-filtering: {len(prefiltered)} items")
+    
+    # Take top 30 candidates for Gemini batch processing
+    candidates = prefiltered[:30]
+    
+    # Call Gemini ONCE for batch judgment (or get from cache)
+    # Returns dict with schema: {date_local, timezone, overall_brief_zh, shortage_reason, items[]}
+    judged_result = get_cached_or_judge_batch(candidates)
+    
+    # Extract items from judged result
+    judged_items = judged_result.get("items", [])
+    
+    # Take top items (already limited to 5 by Gemini)
+    selected = judged_items[:target_count]
+    
+    # Store overall_brief_zh and other metadata in each item for API response
+    # Also ensure all required fields are present
     for item in selected:
-        get_or_generate_summary(item)
+        item["overall_brief_zh"] = judged_result.get("overall_brief_zh", "")
+        item["judged"] = True  # Flag to indicate this came from judgment pipeline
+        # Ensure fields from Gemini are preserved
+        if "id" not in item:
+            item["id"] = item.get("url", "") or str(hash(item.get("title", "")))
+        if "source_name" not in item:
+            item["source_name"] = item.get("source", "Unknown")
     
-    # Ensure we have at least min_count
-    if len(selected) < min_count:
-        # Try to fill with lower-scored items if available
-        remaining = scored_items[len(selected):]
-        for item in remaining[:min_count - len(selected)]:
-            get_or_generate_summary(item)
-            selected.append(item)
-    
-    # Cache results
-    if redis_client and selected:
-        # Convert datetime to ISO string for JSON
-        cache_data = []
-        for item in selected:
-            cache_item = item.copy()
-            if isinstance(cache_item.get("published_at"), datetime):
-                cache_item["published_at"] = cache_item["published_at"].isoformat()
-            cache_data.append(cache_item)
-        redis_client.setex(cache_key, CURATED_CACHE_TTL, json.dumps(cache_data))
+    # If we have fewer than min_count after Gemini filtering, that's okay
+    # We'll return what we have (frontend will show empty state if < 3)
     
     return selected
 
@@ -212,13 +224,15 @@ def format_industry_news_item(item: Dict) -> Dict:
         published_at = parser.parse(published_at)
     
     return {
-        "title": item.get("title", ""),
+        "title": item.get("original_title") or item.get("title", ""),  # Original English title (optional)
         "summary_zh": item.get("summary_zh", ""),
         "why_it_matters_zh": item.get("why_it_matters_zh", ""),
         "tags": item.get("tags", []),
         "original_url": item.get("url", ""),
-        "source": item.get("source", "Unknown"),
+        "source": item.get("source_name") or item.get("source", "Unknown"),
         "time_ago": parse_time_ago(published_at) if published_at else "",
         "published_at": published_at.isoformat() if published_at else None,
-        "score": item.get("score", 0),
+        "score": item.get("relevance_score", item.get("score", 0)),  # Use relevance_score from Gemini
+        "reason": item.get("reason", ""),  # Why this item was selected
+        "judged": item.get("judged", False),  # Flag indicating judgment pipeline
     }

@@ -39,6 +39,7 @@ type MarketSnapshot = {
 
 export function IndexRow() {
   const [marketData, setMarketData] = useState<MarketSnapshot | null>(null)
+  const [mortgageJudgment, setMortgageJudgment] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
@@ -47,6 +48,12 @@ export function IndexRow() {
     const interval = setInterval(fetchMarketData, 5 * 60 * 1000)
     return () => clearInterval(interval)
   }, [])
+
+  useEffect(() => {
+    if (marketData?.mortgage30y?.rate) {
+      fetchMortgageJudgment()
+    }
+  }, [marketData])
 
   const fetchMarketData = async () => {
     try {
@@ -59,6 +66,31 @@ export function IndexRow() {
       console.error('Error fetching market data:', error)
     } finally {
       setLoading(false)
+    }
+  }
+
+  const fetchMortgageJudgment = async () => {
+    if (!marketData?.mortgage30y?.rate) return
+    
+    try {
+      // Note: Currently market snapshot stores 7/1 ARM rate in mortgage30y.rate
+      // For judgment, we use the same rate for both (7/1 ARM is what we track)
+      const rate = marketData.mortgage30y.rate
+      
+      const params = new URLSearchParams({
+        rate_30y: rate.toString(), // Using same rate as fallback
+        rate_7_1_arm: rate.toString() // This is the actual rate we track
+      })
+      
+      const res = await fetch(`${API_URL}/judgment/mortgage?${params}`).catch(() => null)
+      if (res?.ok) {
+        const result = await res.json()
+        if (result.judgment) {
+          setMortgageJudgment(result.judgment)
+        }
+      }
+    } catch (error) {
+      // Silent fail - judgment is optional
     }
   }
 
@@ -295,6 +327,15 @@ export function IndexRow() {
           )}
         </div>
       </div>
+      
+      {/* Mortgage Judgment (if available) */}
+      {mortgageJudgment && (
+        <div className="px-3 sm:px-4 pt-1 border-t border-gray-100 mt-1">
+          <p className="text-xs text-gray-600 italic">
+            {mortgageJudgment}
+          </p>
+        </div>
+      )}
     </div>
   )
 }

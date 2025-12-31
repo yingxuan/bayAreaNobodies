@@ -55,8 +55,11 @@ export function GossipTextList() {
   const fetchGossip = async () => {
     setLoading(true)
     try {
-      // Fetch from Huaren forum (forumid=398)
-      const res = await fetch(`${API_URL}/huaren/gossip?forumid=398&limit=10`).catch(() => null)
+      // Fetch from Huaren forum (forumid=398) - try both endpoints
+      let res = await fetch(`${API_URL}/huaren/forum?forumid=398&limit=10`).catch(() => null)
+      if (!res?.ok) {
+        res = await fetch(`${API_URL}/huaren/gossip?forumid=398&limit=10`).catch(() => null)
+      }
 
       if (res?.ok) {
         const data = await res.json()

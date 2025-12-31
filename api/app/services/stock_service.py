@@ -590,10 +590,18 @@ def get_stock_news(ticker: str, range_hours: int = 24) -> List[StockNewsItem]:
     
     # Cache for 15 minutes
     if redis_client and news_items:
+        # Convert datetime to ISO format string for JSON serialization
+        def serialize_news_item(item):
+            data = item.dict()
+            if 'published_at' in data and data['published_at']:
+                if isinstance(data['published_at'], datetime):
+                    data['published_at'] = data['published_at'].isoformat()
+            return data
+        
         redis_client.setex(
             cache_key,
             900,
-            json.dumps([item.dict() for item in news_items])
+            json.dumps([serialize_news_item(item) for item in news_items])
         )
     
     return news_items

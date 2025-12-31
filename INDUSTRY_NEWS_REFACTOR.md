@@ -1,182 +1,126 @@
-# Industry News Refactor Summary
+# Industry News Section Refactor - Summary
 
-## Overview
-Refactored the "行业新闻" (Industry News) section to be Chinese-first, highly relevant to Bay Area tech workers, and non-empty.
+## Task
+Refactor ONLY the "行业新闻 / 今日热点" section to use Gemini judgment instead of raw news rendering.
 
-## Key Changes
+## Changes Made
 
-### 1. New API Endpoint: `/api/news/industry`
-- Returns 4-6 curated news items (target=5, min=4, max=6)
-- Each item includes:
-  - `summary_zh`: Chinese summary (≤28 chars)
-  - `why_it_matters_zh`: Why it matters (stock/career/tech impact)
-  - `tags`: Max 3 tags (AI, LLM, NVDA, MSFT, etc.)
-  - `original_url`: Link to original article
-  - `source`: News source name
-  - `time_ago`: Relative time (e.g., "2小时前")
-  - `published_at`: ISO timestamp
+### 1. New Service: `api/app/services/news_judgment_service.py`
+Created a new service that uses Gemini to process each news item:
 
-### 2. Data Sources Added
-- **RSS Feeds** (free):
-  - TechCrunch (`https://techcrunch.com/feed/`)
-  - The Verge (`https://www.theverge.com/rss/index.xml`)
-  - Ars Technica (`https://feeds.arstechnica.com/arstechnica/index`)
-  - Reuters Technology (`https://www.reuters.com/tools/rss/technology`)
-- **Hacker News** (filtered for big tech relevance)
-- All sources fetched in parallel with 10-minute caching
+**Functions:**
+- `judge_news_item_with_gemini()`: Calls Gemini API to generate:
+  - `summary_zh`: 1 Chinese sentence summarizing the news (≤28 chars)
+  - `why_it_matters_zh`: 1 Chinese sentence explaining impact (money/career/AI/big tech)
+  - `relevance_score`: Number 0-100
 
-### 3. Relevance Filtering & Scoring
+- `get_or_judge_news_item()`: Gets cached judgment or generates new one
+  - Caches by URL (TTL ≥ 1 hour)
+  - Filters out items with `relevance_score < 60`
+  - Returns None if item should be filtered
 
-#### Hard Negative Filters (drop):
-- Pure politics, war, crime, celebrity, sports
-- Geographic world news unrelated to big tech
-- Generic "Show HN" without AI/dev relevance
+- `filter_politics_war_protests()`: Explicitly filters out:
+  - Politics (election, president, congress, etc.)
+  - War (war, conflict, invasion, attack, etc.)
+  - Protests (protest, demonstration, rally, etc.)
 
-#### Hard Positive Includes:
-- Big tech companies: OpenAI, Google, Meta, Microsoft, Nvidia, Apple, Amazon, Tesla, Anthropic, xAI
-- AI/LLM keywords: model, inference, training, GPU, CUDA, datacenter, chips, semiconductor, cloud
-- Markets/career: earnings, guidance, layoffs, hiring, stock, SEC, DOJ/antitrust
+**Gemini Prompt:**
+The service sends a structured prompt asking Gemini to:
+1. Rate relevance (0-100, with <60 for politics/war/protests)
+2. Generate Chinese summary (≤28 chars)
+3. Explain why it matters (focus on stock/career/tech impact)
 
-#### Scoring System:
-- **Relevance Score (0-60)**: Based on keyword triggers and source trust
-- **Freshness Score (0-20)**: <24h=20, 24-48h=15, 48-72h=10, >72h=5
-- **Market Impact Score (0-20)**: Earnings, layoffs, antitrust, major funding, chips supply
-- **Total Score**: Sum of all three (0-100)
-- Minimum score threshold: 30 (relaxed to 20 if <4 items)
+### 2. Updated: `api/app/services/industry_news_service.py`
 
-### 4. Chinese Summarization
+**Changes:**
+- Added import: `from app.services.news_judgment_service import get_or_judge_news_item, filter_politics_war_protests`
 
-#### Implementation:
-- **Primary**: Gemini API (if `GEMINI_API_KEY` configured)
-  - Generates `summary_zh` (≤28 chars) and `why_it_matters_zh`
-  - Cached for 6 hours per URL+title hash
-- **Fallback**: Rule-based translation + template-based "why it matters"
-  - Uses keyword dictionary for basic translations
-  - Generates "why it matters" from tags
+- Modified `aggregate_industry_news()` function:
+  - After deduplication and basic scoring
+  - **NEW STEP**: Process each item with Gemini judgment
+    - Explicitly filter politics/war/protests
+    - Call `get_or_judge_news_item()` for each item
+    - Items with `relevance_score < 60` are filtered out
+    - Limit to max 5 items
+  - Only items that pass Gemini judgment are returned
 
-#### Caching Strategy:
-- **Curated list**: 10 minutes (Redis)
-- **Individual summaries**: 6 hours (Redis, keyed by URL+title hash)
-- Prevents repeated LLM calls for unchanged content
+- Updated `format_industry_news_item()`:
+  - Now includes original `title` (English) for optional display
+  - Uses `relevance_score` from Gemini instead of basic score
 
-### 5. Tagging System
+**Processing Flow:**
+```
+1. Fetch raw news (RSS + HN)
+2. Deduplicate
+3. Basic relevance scoring (min_score=30)
+4. **NEW: Gemini Judgment Step**
+   - Filter politics/war/protests explicitly
+   - Call Gemini for each item
+   - Filter relevance_score < 60
+   - Limit to 5 items
+5. Return judged items
+```
 
-Auto-assigned tags (max 3 per item):
-- **Companies**: NVDA, MSFT, META, GOOG, AAPL, AMZN, TSLA
-- **Tech**: AI, LLM, Chips, Cloud, Security
-- **Markets**: Earnings, Layoffs, Regulation, Startups
+### 3. Updated: `web/app/components/home/TechNewsList.tsx`
 
-Tags extracted from title/description using keyword mapping.
+**Changes:**
+- Updated empty state message: "今天没有重要行业新闻" (instead of "今天科技新闻较少，稍后再试")
+- Added `title` field to `NewsItem` type (optional, for original English title)
+- Added display of original English title (very small, hidden by default, shown on hover):
+  ```tsx
+  {item.title && (
+    <p className="text-[10px] text-gray-400 line-clamp-1 mb-0.5 opacity-0 hover:opacity-100 transition-opacity">
+      {item.title}
+    </p>
+  )}
+  ```
 
-### 6. UI Changes
+## Filtering Rules
 
-#### Before:
-- Raw English headlines
-- Title-first rendering
-- Generic source/time metadata
+1. **Relevance Score**: Items with `relevance_score < 60` are filtered out
+2. **Explicit Filters**: Politics, war, and protests are explicitly filtered
+3. **Max Items**: Maximum 5 items are returned
+4. **Min Items**: If fewer than 4 items survive filtering, frontend shows empty state
 
-#### After:
-- **Chinese-first summary cards**:
-  - `summary_zh` (bold, line-clamp-2)
-  - `why_it_matters_zh` (muted, line-clamp-1)
-  - Tags pills (max 3, blue badges)
-  - Source + relative time
-  - Click opens original article in new tab
-- Compact spacing: `py-2.5` per row
-- Empty state: "今天科技新闻较少，稍后再试"
+## Caching
 
-### 7. Files Created/Modified
+- **Gemini Results**: Cached by URL (TTL = 1 hour)
+- **Cache Key**: `news_judgment:{url_hash}`
+- **Cache Format**: JSON with `relevance_score`, `summary_zh`, `why_it_matters_zh`
 
-#### New Files:
-- `api/app/services/news_blacklist.py` - Blacklist configuration
-- `api/app/services/rss_fetcher.py` - RSS feed fetcher
-- `api/app/services/news_relevance_scorer.py` - Relevance scoring
-- `api/app/services/news_summarizer.py` - Chinese summarization
-- `api/app/services/industry_news_service.py` - Main aggregation service
-- `api/app/routers/news.py` - API endpoint
+## Gemini Usage Confirmation
 
-#### Modified Files:
-- `api/main.py` - Added news router
-- `web/app/components/home/TechNewsList.tsx` - Complete UI rewrite
+**Gemini is called in:**
+- `news_judgment_service.py` → `judge_news_item_with_gemini()`
+- Called for each news item in `industry_news_service.py` → `aggregate_industry_news()`
 
-## Fallback Behavior
+**How to verify Gemini is being called:**
+1. Check API logs for "Error judging news item with Gemini" or successful calls
+2. Check Redis cache keys: `news_judgment:*`
+3. Check API response: Items should have `relevance_score`, `summary_zh`, `why_it_matters_zh`
 
-1. **If <4 items after filtering**:
-   - Relax minimum score from 30 to 20
-   - Retry filtering
+## Files Modified
 
-2. **If still <4 items**:
-   - Show available items (even if <4)
-   - Display empty state message if 0 items
-
-3. **If Gemini API unavailable**:
-   - Falls back to rule-based summarization
-   - Still generates Chinese summaries (basic)
-
-4. **If RSS feed fails**:
-   - Gracefully continues with other sources
-   - Never blocks page render
-
-## Performance
-
-- **Parallel fetching**: All RSS sources fetched concurrently
-- **Caching**: 10-min list cache, 6-hour summary cache
-- **Timeouts**: 5-second timeout per RSS feed
-- **Deduplication**: By URL and title similarity
-- **Ranking**: By score (descending), then freshness
-
-## Acceptance Criteria Met
-
-✅ Displays 4-6 items (target 5) consistently  
-✅ Items are Chinese-first with clear "why it matters"  
-✅ No irrelevant world/politics content  
-✅ Highly relevant to Bay Area/SV tech workers  
-✅ Fast and stable (caching prevents repeated heavy work)  
-✅ No paid APIs (all free RSS + existing Gemini if configured)  
-✅ Multi-source aggregation with fallbacks  
-
-## Configuration
-
-### Required Environment Variables:
-- `GEMINI_API_KEY` (optional): For Chinese summarization via Gemini
-- `REDIS_URL` (optional): For caching (defaults to localhost)
-
-### RSS Sources:
-All sources are free and publicly available. No API keys required.
+1. ✅ `api/app/services/news_judgment_service.py` (NEW FILE)
+2. ✅ `api/app/services/industry_news_service.py` (MODIFIED)
+3. ✅ `web/app/components/home/TechNewsList.tsx` (MODIFIED)
 
 ## Testing
 
-To test the endpoint:
-```bash
-curl http://localhost:8000/news/industry?limit=5
-```
-
-Expected response:
-```json
-{
-  "items": [
-    {
-      "summary_zh": "OpenAI发布新模型...",
-      "why_it_matters_zh": "关注AI技术趋势",
-      "tags": ["AI", "LLM"],
-      "original_url": "https://...",
-      "source": "TechCrunch",
-      "time_ago": "2小时前",
-      "score": 85
-    },
-    ...
-  ],
-  "total": 5,
-  "target": 5,
-  "min_count": 4,
-  "max_count": 6
-}
-```
+To test:
+1. Call `/api/news/industry?limit=5`
+2. Check response items have:
+   - `summary_zh` (Chinese summary)
+   - `why_it_matters_zh` (Why it matters)
+   - `relevance_score` (0-100)
+   - `title` (Original English title)
+3. Verify items with `relevance_score < 60` are filtered out
+4. Verify politics/war/protests are filtered out
+5. Verify max 5 items returned
 
 ## Notes
 
-- RSS feeds may have rate limits; caching helps mitigate
-- Gemini API has free tier limits; caching reduces API calls
-- If no Gemini API key, fallback summarization still works
-- All filtering/scoring happens server-side for performance
-- UI is client-side React component with loading states
+- Gemini API key must be set in environment: `GEMINI_API_KEY`
+- If Gemini is unavailable, items will be filtered out (no fallback)
+- Caching prevents repeated Gemini calls for same URLs
+- Frontend shows empty state if < 3 items (or 0 items)

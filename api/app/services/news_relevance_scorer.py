@@ -18,10 +18,10 @@ def calculate_relevance_score(item: Dict) -> float:
     Calculate relevance score (0-60)
     Based on keyword triggers and source trust
     """
-    title = item.get("title", "").lower()
-    description = item.get("description", "").lower()
+    title = (item.get("title") or "").lower()
+    description = (item.get("description") or "").lower()
     text = f"{title} {description}"
-    source = item.get("source", "").lower()
+    source = (item.get("source") or "").lower()
     
     score = 0
     
@@ -103,8 +103,8 @@ def calculate_market_impact_score(item: Dict) -> float:
     Calculate market impact score (0-20)
     Based on earnings, layoffs, antitrust, major funding, chips supply
     """
-    title = item.get("title", "").lower()
-    description = item.get("description", "").lower()
+    title = (item.get("title") or "").lower()
+    description = (item.get("description") or "").lower()
     text = f"{title} {description}"
     
     score = 0

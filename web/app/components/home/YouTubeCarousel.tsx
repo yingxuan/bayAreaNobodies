@@ -122,7 +122,17 @@ export function YouTubeCarousel({ category, title, viewMoreHref, limit }: YouTub
 
   // Don't render if no videos (empty sections are worse than missing sections)
   if (videos.length === 0) {
-    return null
+    return (
+      <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-3 sm:p-4">
+        <div className="flex items-center justify-between mb-2">
+          <h3 className="text-base font-bold text-gray-900">{title}</h3>
+          <Link href={viewMoreHref} className="text-xs text-blue-600 hover:text-blue-700 whitespace-nowrap">
+            更多 →
+          </Link>
+        </div>
+        <div className="text-xs text-gray-500 py-4 text-center">暂无视频，稍后再试</div>
+      </div>
+    )
   }
 
   return (

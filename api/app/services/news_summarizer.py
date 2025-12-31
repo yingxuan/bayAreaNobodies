@@ -41,7 +41,20 @@ def generate_summary_with_gemini(title: str, description: str = "", url: str = "
     
     try:
         genai.configure(api_key=GEMINI_API_KEY)
-        model = genai.GenerativeModel('gemini-pro')
+        # Use gemini-3-flash (primary), with fallbacks
+        try:
+            model = genai.GenerativeModel('gemini-3-flash')
+        except:
+            try:
+                model = genai.GenerativeModel('gemini-2.5-pro')
+            except:
+                try:
+                    model = genai.GenerativeModel('gemini-1.5-pro')
+                except:
+                    try:
+                        model = genai.GenerativeModel('gemini-1.5-flash')
+                    except:
+                        model = genai.GenerativeModel('gemini-pro')
         
         prompt = f"""你是一个为湾区码农提供科技新闻摘要的助手。
 
@@ -149,9 +162,33 @@ def generate_summary_fallback(title: str, description: str = "", tags: list = No
     
     # Generate simple summary (use title with translations)
     summary_zh = title
+    title_lower = title.lower()
+    
+    # Try to translate key parts
     for en, zh in translations.items():
-        if en.lower() in title.lower():
-            summary_zh = summary_zh.replace(en, zh)
+        if en.lower() in title_lower:
+            # Replace whole word, case-insensitive
+            import re
+            pattern = re.compile(re.escape(en), re.IGNORECASE)
+            summary_zh = pattern.sub(zh, summary_zh)
+    
+    # If still mostly English, create a simple Chinese summary
+    # Count Chinese characters
+    chinese_chars = sum(1 for c in summary_zh if '\u4e00' <= c <= '\u9fff')
+    if chinese_chars < len(summary_zh) * 0.3:  # Less than 30% Chinese
+        # Create a template-based summary
+        if any(keyword in title_lower for keyword in ["ai", "llm", "gpt", "claude"]):
+            summary_zh = "AI技术动态"
+        elif any(keyword in title_lower for keyword in ["nvidia", "nvda", "gpu", "chip"]):
+            summary_zh = "芯片行业新闻"
+        elif any(keyword in title_lower for keyword in ["google", "meta", "microsoft", "apple", "amazon"]):
+            summary_zh = "科技巨头动态"
+        elif any(keyword in title_lower for keyword in ["earnings", "revenue", "profit"]):
+            summary_zh = "财报相关新闻"
+        elif any(keyword in title_lower for keyword in ["layoff", "hiring", "job"]):
+            summary_zh = "就业市场动态"
+        else:
+            summary_zh = "科技行业新闻"
     
     # Generate why_it_matters from tags
     why_it_matters_zh = "值得关注"

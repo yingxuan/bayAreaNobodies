@@ -27,10 +27,19 @@ type PortfolioData = {
 export function FinancialSummaryBar() {
   const [data, setData] = useState<PortfolioData | null>(null)
   const [loading, setLoading] = useState(true)
+  const [judgment, setJudgment] = useState<string | null>(null)
+  const [indexChange, setIndexChange] = useState<number | null>(null)
 
   useEffect(() => {
     fetchData()
+    fetchIndexChange()
   }, [])
+
+  useEffect(() => {
+    if (data) {
+      fetchJudgment()
+    }
+  }, [data])
 
   const fetchData = async () => {
     setLoading(true)
@@ -44,6 +53,53 @@ export function FinancialSummaryBar() {
       console.error('Error fetching portfolio data:', error)
     } finally {
       setLoading(false)
+    }
+  }
+
+  const fetchIndexChange = async () => {
+    try {
+      const res = await fetch(`${API_URL}/market/snapshot`).catch(() => null)
+      if (res?.ok) {
+        const snapshot = await res.json()
+        const spyChange = snapshot.sp500?.chgPct24h
+        if (spyChange !== undefined) {
+          setIndexChange(spyChange)
+        }
+      }
+    } catch (error) {
+      // Silent fail
+    }
+  }
+
+  const fetchJudgment = async () => {
+    if (!data) return
+    
+    try {
+      const topMovers = getTopMovers()
+      const topMoversJson = JSON.stringify(topMovers.slice(0, 3).map(m => ({
+        ticker: m.ticker,
+        day_gain_percent: m.day_gain_percent || 0
+      })))
+      
+      const params = new URLSearchParams({
+        day_gain: data.day_gain.toString(),
+        day_gain_percent: data.day_gain_percent.toString(),
+        top_movers: topMoversJson
+      })
+      
+      if (indexChange !== null) {
+        params.append('index_change', indexChange.toString())
+      }
+      
+      const res = await fetch(`${API_URL}/judgment/portfolio?${params}`).catch(() => null)
+      if (res?.ok) {
+        const result = await res.json()
+        if (result.judgment) {
+          setJudgment(result.judgment)
+        }
+      }
+    } catch (error) {
+      // Silent fail - judgment is optional
     }
   }
 
@@ -287,6 +343,15 @@ export function FinancialSummaryBar() {
           </div>
         </div>
       </div>
+      
+      {/* Row 2: Judgment sentence (if available) */}
+      {judgment && (
+        <div className="px-3 sm:px-4 pt-1 border-t border-gray-100">
+          <p className="text-xs text-gray-600 italic">
+            {judgment}
+          </p>
+        </div>
+      )}
     </div>
   )
 }

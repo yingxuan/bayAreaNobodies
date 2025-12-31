@@ -82,7 +82,9 @@ export function TechVideoCards() {
   }
 
   if (videos.length === 0) {
-    return null
+    return (
+      <div className="text-xs text-gray-500 py-4 text-center">暂无视频，稍后再试</div>
+    )
   }
 
   return (

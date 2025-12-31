@@ -183,7 +183,19 @@ export function PlaceGrid({ title, cuisineType, viewMoreHref }: PlaceGridProps) 
   }
 
   if (places.length === 0) {
-    return null
+    return (
+      <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-3 sm:p-4 h-full flex flex-col">
+        <div className="flex items-center justify-between mb-3 flex-shrink-0">
+          <h3 className="text-base font-bold text-gray-900">{title}</h3>
+          {viewMoreHref && (
+            <Link href={viewMoreHref} className="text-xs text-blue-600 hover:text-blue-700 whitespace-nowrap flex-shrink-0">
+              更多 →
+            </Link>
+          )}
+        </div>
+        <div className="text-xs text-gray-500 py-4 text-center">暂无推荐，稍后再试</div>
+      </div>
+    )
   }
 
   return (
